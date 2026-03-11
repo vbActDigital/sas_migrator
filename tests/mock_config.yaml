@@ -1,0 +1,27 @@
+project:
+  name: MVP1 Mock Test
+  client: MAPFRE
+sas_environment:
+  code_paths:
+  - C:/Users/actdigital/Desktop/repos/sas_migrator/tests/mock_sas_environment/programs
+  - C:/Users/actdigital/Desktop/repos/sas_migrator/tests/mock_sas_environment/macros
+  data_paths:
+  - C:/Users/actdigital/Desktop/repos/sas_migrator/tests/mock_sas_environment/data
+  log_paths: []
+  exclude_patterns:
+  - backup
+target:
+  platform: snowflake
+library_mapping:
+  rawdata:
+    database: SAS_MIGRATION
+    schema: RAW
+  dw:
+    database: SAS_MIGRATION
+    schema: REFINED
+catalog:
+  output_format:
+  - json
+  - markdown
+  detect_pii: true
+  infer_domains: true
