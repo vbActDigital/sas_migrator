@@ -1,0 +1,54 @@
+project:
+  name: "SAS Migration - Snowflake"
+  client: "MAPFRE"
+
+sas_environment:
+  code_paths:
+    - /sas/programs
+    - /sas/macros
+  data_paths:
+    - /sas/data
+  log_paths:
+    - /sas/logs
+  exclude_patterns:
+    - backup
+    - archive
+    - test
+
+target:
+  platform: snowflake
+  account: ${SNOWFLAKE_ACCOUNT}
+  user: ${SNOWFLAKE_USER}
+  password: ${SNOWFLAKE_PASSWORD}
+  warehouse: MIGRATION_WH
+  database: SAS_MIGRATION
+  role: SYSADMIN
+
+  aws:
+    region: us-east-1
+    s3_bucket: sas-migration-staging
+    s3_prefix: raw/
+    iam_role: ${AWS_IAM_ROLE}
+
+library_mapping:
+  rawdata:
+    database: SAS_MIGRATION
+    schema: RAW
+  dw:
+    database: SAS_MIGRATION
+    schema: REFINED
+
+catalog:
+  output_format:
+    - json
+    - markdown
+  detect_pii: true
+  infer_domains: true
+
+llm:
+  provider: openai
+  api_key_env: OPENAI_API_KEY
+  models:
+    fast: gpt-4o-mini
+    balanced: gpt-4o
+    powerful: gpt-4o

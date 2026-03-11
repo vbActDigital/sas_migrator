@@ -1,0 +1,12 @@
+services:
+  sas-migrator-demo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sas-migrator-demo
+    volumes:
+      - ./docker_output:/app/docker_output
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    command: python tests/run_docker_demo.py
