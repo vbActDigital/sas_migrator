@@ -316,81 +316,148 @@ RUN;
 
 def create_datasets():
     datasets = {
-        "customers_raw": {
-            "dataset_name": "customers_raw",
-            "row_count": 1000,
-            "column_count": 16,
-            "size_bytes": 256000,
+        "pendente_analitico": {
+            "dataset_name": "pendente_analitico",
+            "row_count": 150000,
+            "column_count": 45,
+            "size_bytes": 52500000,
+            "description": "Base analitica de premios pendentes - importada de arquivo texto delimitado",
             "columns": [
-                {"name": "customer_id", "type": "num", "length": 8, "format": "", "label": "Customer ID"},
-                {"name": "customer_name", "type": "char", "length": 50, "format": "", "label": "Customer Name"},
-                {"name": "email", "type": "char", "length": 80, "format": "", "label": "Email Address"},
-                {"name": "cpf", "type": "char", "length": 14, "format": "", "label": "CPF"},
-                {"name": "phone", "type": "char", "length": 20, "format": "", "label": "Phone Number"},
-                {"name": "birth_date", "type": "num", "length": 8, "format": "DATE9.", "label": "Birth Date"},
-                {"name": "gender", "type": "char", "length": 1, "format": "", "label": "Gender"},
-                {"name": "income", "type": "num", "length": 8, "format": "DOLLAR12.2", "label": "Monthly Income"},
-                {"name": "segment", "type": "char", "length": 20, "format": "", "label": "Customer Segment"},
-                {"name": "risk_score", "type": "num", "length": 8, "format": "8.2", "label": "Risk Score"},
-                {"name": "registration_date", "type": "num", "length": 8, "format": "DATE9.", "label": "Registration Date"},
-                {"name": "status", "type": "char", "length": 10, "format": "", "label": "Status"},
-                {"name": "city", "type": "char", "length": 40, "format": "", "label": "City"},
-                {"name": "state", "type": "char", "length": 2, "format": "", "label": "State"},
-                {"name": "zip_code", "type": "char", "length": 10, "format": "", "label": "ZIP Code"},
-                {"name": "last_update", "type": "num", "length": 8, "format": "DATETIME20.", "label": "Last Update"},
+                {"name": "ano_mes", "type": "num", "length": 8, "format": "BEST6.", "label": "Ano/Mes Referencia"},
+                {"name": "cod_seguradora_susep", "type": "num", "length": 8, "format": "BEST5.", "label": "Codigo Seguradora SUSEP"},
+                {"name": "cod_apolice", "type": "num", "length": 8, "format": "BEST20.", "label": "Codigo Apolice"},
+                {"name": "num_endosso", "type": "char", "length": 10, "format": "$CHAR10.", "label": "Numero Endosso"},
+                {"name": "num_certificado", "type": "char", "length": 15, "format": "$CHAR15.", "label": "Numero Certificado"},
+                {"name": "cod_produto", "type": "num", "length": 8, "format": "BEST5.", "label": "Codigo Produto"},
+                {"name": "cod_agencia", "type": "num", "length": 8, "format": "BEST5.", "label": "Codigo Agencia"},
+                {"name": "cod_tp_emissao", "type": "char", "length": 1, "format": "$CHAR1.", "label": "Tipo Emissao (D=Direto, A=Aceito)"},
+                {"name": "cod_moeda", "type": "num", "length": 8, "format": "BEST3.", "label": "Codigo Moeda"},
+                {"name": "dt_inicio_vigencia", "type": "num", "length": 8, "format": "DDMMYY10.", "label": "Data Inicio Vigencia"},
+                {"name": "dt_fim_vigencia", "type": "num", "length": 8, "format": "DDMMYY10.", "label": "Data Fim Vigencia"},
+                {"name": "dt_emissao_doc", "type": "num", "length": 8, "format": "DDMMYY10.", "label": "Data Emissao Documento"},
+                {"name": "qtde_parcelas", "type": "num", "length": 8, "format": "BEST3.", "label": "Quantidade Parcelas"},
+                {"name": "dt_vencimento", "type": "num", "length": 8, "format": "DDMMYY10.", "label": "Data Vencimento"},
+                {"name": "dt_inicio_cobertura_parcela", "type": "num", "length": 8, "format": "DDMMYY10.", "label": "Inicio Cobertura Parcela"},
+                {"name": "dt_fim_cobertura_parcela", "type": "num", "length": 8, "format": "DDMMYY10.", "label": "Fim Cobertura Parcela"},
+                {"name": "num_parcela", "type": "num", "length": 8, "format": "BEST3.", "label": "Numero Parcela"},
+                {"name": "grupo_ramo_contabil", "type": "num", "length": 8, "format": "BEST2.", "label": "Grupo Ramo Contabil"},
+                {"name": "cod_ramo_contabil", "type": "num", "length": 8, "format": "BEST2.", "label": "Codigo Ramo Contabil"},
+                {"name": "cod_ramo_emitido", "type": "num", "length": 8, "format": "BEST2.", "label": "Codigo Ramo Emitido"},
+                {"name": "val_cobranca", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Valor Cobranca"},
+                {"name": "val_iof", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Valor IOF"},
+                {"name": "val_custo_apolice", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Custo Apolice"},
+                {"name": "val_desconto", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Valor Desconto"},
+                {"name": "val_adic_fracionamento", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Adicional Fracionamento"},
+                {"name": "val_comissao", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Valor Comissao"},
+                {"name": "val_estipulante", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Valor Estipulante"},
+                {"name": "val_cobranca_cosseguro", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Cobranca Cosseguro"},
+                {"name": "val_comissao_cosseguro", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Comissao Cosseguro"},
+                {"name": "val_cobranca_resseguro", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Cobranca Resseguro"},
+                {"name": "val_comissao_resseguro", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Comissao Resseguro"},
+                {"name": "val_direito_creditorio", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Direito Creditorio"},
+                {"name": "val_comissao_agenciamento", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Comissao Agenciamento"},
+                {"name": "val_remuneracao_representante", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Remuneracao Representante"},
+                {"name": "dt_inicio_vigencia_ori", "type": "num", "length": 8, "format": "DDMMYY10.", "label": "Inicio Vigencia Original"},
+                {"name": "dt_fim_vigencia_ori", "type": "num", "length": 8, "format": "DDMMYY10.", "label": "Fim Vigencia Original"},
+                {"name": "cod_sistema_origem", "type": "char", "length": 14, "format": "$CHAR14.", "label": "Sistema Origem"},
+                {"name": "cpf_cnpj_segurado", "type": "num", "length": 8, "format": "BEST14.", "label": "CPF/CNPJ Segurado"},
+                {"name": "num_proposta", "type": "num", "length": 8, "format": "BEST20.", "label": "Numero Proposta"},
+                {"name": "IDLG", "type": "char", "length": 50, "format": "$CHAR50.", "label": "ID Legado"},
+                {"name": "numero_externo", "type": "char", "length": 40, "format": "$CHAR40.", "label": "Numero Externo"},
+                {"name": "val_comissao_VC", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Comissao VC"},
+                {"name": "val_estipulante_VC", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Estipulante VC"},
+                {"name": "val_cobranca_VC", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Cobranca VC"},
+                {"name": "LETRA_SISTEMA_ORIGEM", "type": "char", "length": 4, "format": "$CHAR4.", "label": "Letra Sistema Origem"},
             ],
         },
-        "policies": {
-            "dataset_name": "policies",
-            "row_count": 2000,
-            "column_count": 7,
-            "size_bytes": 160000,
+        "percentual_resseguro": {
+            "dataset_name": "percentual_resseguro",
+            "row_count": 85,
+            "column_count": 4,
+            "size_bytes": 6800,
+            "description": "Percentuais de cessao de resseguro por ramo e produto",
             "columns": [
-                {"name": "policy_id", "type": "num", "length": 8, "format": "", "label": "Policy ID"},
-                {"name": "customer_id", "type": "num", "length": 8, "format": "", "label": "Customer ID"},
-                {"name": "product_code", "type": "char", "length": 10, "format": "", "label": "Product Code"},
-                {"name": "premium_amount", "type": "num", "length": 8, "format": "DOLLAR12.2", "label": "Premium Amount"},
-                {"name": "start_date", "type": "num", "length": 8, "format": "DATE9.", "label": "Start Date"},
-                {"name": "end_date", "type": "num", "length": 8, "format": "DATE9.", "label": "End Date"},
-                {"name": "status", "type": "char", "length": 10, "format": "", "label": "Status"},
+                {"name": "COD_RAMO_CONTABIL", "type": "num", "length": 8, "format": "BEST2.", "label": "Codigo Ramo Contabil"},
+                {"name": "COD_PRODUTO", "type": "num", "length": 8, "format": "BEST5.", "label": "Codigo Produto"},
+                {"name": "Percen_Cessao_utilizado", "type": "num", "length": 8, "format": "COMMAX20.4", "label": "Percentual Cessao Utilizado"},
+                {"name": "Percentual_SAS", "type": "num", "length": 8, "format": "COMMAX20.4", "label": "Percentual SAS"},
             ],
         },
-        "claims": {
-            "dataset_name": "claims",
+        "grupo_rvr": {
+            "dataset_name": "grupo_rvr",
+            "row_count": 30,
+            "column_count": 3,
+            "size_bytes": 2400,
+            "description": "Grupos de calculo dos fatores de RVR por ramo contabil",
+            "columns": [
+                {"name": "grupo_ramo_contabil", "type": "num", "length": 8, "format": "BEST2.", "label": "Grupo Ramo Contabil"},
+                {"name": "cod_ramo_contabil", "type": "num", "length": 8, "format": "BEST2.", "label": "Codigo Ramo Contabil"},
+                {"name": "Grupo_Calculo", "type": "char", "length": 20, "format": "", "label": "Grupo de Calculo RVR"},
+            ],
+        },
+        "fatores_rvr": {
+            "dataset_name": "fatores_rvr",
             "row_count": 500,
-            "column_count": 6,
-            "size_bytes": 48000,
+            "column_count": 9,
+            "size_bytes": 36000,
+            "description": "Fatores atuariais de RVR por grupo de calculo, aging e status",
             "columns": [
-                {"name": "claim_id", "type": "num", "length": 8, "format": "", "label": "Claim ID"},
-                {"name": "policy_id", "type": "num", "length": 8, "format": "", "label": "Policy ID"},
-                {"name": "claim_amount", "type": "num", "length": 8, "format": "DOLLAR12.2", "label": "Claim Amount"},
-                {"name": "claim_date", "type": "num", "length": 8, "format": "DATE9.", "label": "Claim Date"},
-                {"name": "claim_type", "type": "char", "length": 20, "format": "", "label": "Claim Type"},
-                {"name": "status", "type": "char", "length": 10, "format": "", "label": "Status"},
+                {"name": "cod_seguradora_susep", "type": "num", "length": 8, "format": "BEST5.", "label": "Codigo Seguradora SUSEP"},
+                {"name": "cod_tp_emissao", "type": "char", "length": 1, "format": "$CHAR1.", "label": "Tipo Emissao"},
+                {"name": "Status_Vigencia", "type": "char", "length": 20, "format": "", "label": "Status Vigencia"},
+                {"name": "Status_Cliente", "type": "char", "length": 20, "format": "", "label": "Status Cliente"},
+                {"name": "Status_Apolice", "type": "char", "length": 20, "format": "", "label": "Status Apolice"},
+                {"name": "Status_Parcela", "type": "char", "length": 20, "format": "", "label": "Status Parcela"},
+                {"name": "Agging_meses", "type": "num", "length": 8, "format": "BEST3.", "label": "Aging em Meses"},
+                {"name": "Grupo_Calculo", "type": "char", "length": 20, "format": "", "label": "Grupo de Calculo"},
+                {"name": "FATOR_ATUARIAL", "type": "num", "length": 8, "format": "COMMAX20.18", "label": "Fator Atuarial RVR"},
             ],
         },
-        "addresses": {
-            "dataset_name": "addresses",
-            "row_count": 800,
-            "column_count": 5,
-            "size_bytes": 64000,
+        "base_rvr_resultado": {
+            "dataset_name": "base_rvr_resultado",
+            "row_count": 150000,
+            "column_count": 65,
+            "size_bytes": 78000000,
+            "description": "Resultado final do calculo de RVR com aging, condicoes e provisoes",
             "columns": [
-                {"name": "customer_id", "type": "num", "length": 8, "format": "", "label": "Customer ID"},
-                {"name": "street", "type": "char", "length": 100, "format": "", "label": "Street"},
-                {"name": "city", "type": "char", "length": 40, "format": "", "label": "City"},
-                {"name": "state", "type": "char", "length": 2, "format": "", "label": "State"},
-                {"name": "zip_code", "type": "char", "length": 10, "format": "", "label": "ZIP Code"},
+                {"name": "ano_mes", "type": "num", "length": 8, "format": "BEST6.", "label": "Ano/Mes"},
+                {"name": "cod_apolice", "type": "num", "length": 8, "format": "BEST20.", "label": "Codigo Apolice"},
+                {"name": "cod_produto", "type": "num", "length": 8, "format": "BEST5.", "label": "Codigo Produto"},
+                {"name": "cod_ramo_contabil", "type": "num", "length": 8, "format": "BEST2.", "label": "Ramo Contabil"},
+                {"name": "cpf_cnpj_segurado", "type": "num", "length": 8, "format": "BEST14.", "label": "CPF/CNPJ Segurado"},
+                {"name": "val_cobranca", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Valor Cobranca"},
+                {"name": "val_comissao", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Valor Comissao"},
+                {"name": "val_iof", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Valor IOF"},
+                {"name": "base_ppng", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Base PPNG"},
+                {"name": "dcd_base", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "DCD Base"},
+                {"name": "fator_decorrer", "type": "num", "length": 8, "format": "COMMAX20.18", "label": "Fator Decorrer"},
+                {"name": "calc_ppng_dec", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "PPNG a Decorrer"},
+                {"name": "calc_dcd_dec", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "DCD a Decorrer"},
+                {"name": "premio_resseguro", "type": "num", "length": 8, "format": "COMMAX20.4", "label": "Premio Resseguro"},
+                {"name": "ppng_resseguro", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "PPNG Resseguro"},
+                {"name": "RVR", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "RVR Calculada"},
+                {"name": "RVR_ATUARIAL", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "RVR Atuarial"},
+                {"name": "FATOR_ATUARIAL", "type": "num", "length": 8, "format": "COMMAX20.18", "label": "Fator Atuarial"},
+                {"name": "CONDICOES", "type": "char", "length": 10, "format": "$10.", "label": "Condicao (1-5)"},
+                {"name": "aging_dias_nome", "type": "char", "length": 25, "format": "$25.", "label": "Aging Dias Nome"},
+                {"name": "venc_vinc", "type": "char", "length": 25, "format": "$25.", "label": "Vencido/A Vencer"},
+                {"name": "decorrer_e_decorrido", "type": "char", "length": 25, "format": "$25.", "label": "Decorrer/Decorrido"},
+                {"name": "INCONSIST", "type": "char", "length": 1, "format": "$1.", "label": "Flag Inconsistencia"},
+                {"name": "DIAS", "type": "num", "length": 8, "format": "BEST6.", "label": "Dias ate Vencimento"},
+                {"name": "DIAS_VIGENTE", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Dias Vigente"},
+                {"name": "DIAS_DECORRER", "type": "num", "length": 8, "format": "COMMAX20.2", "label": "Dias a Decorrer"},
             ],
         },
         "products": {
             "dataset_name": "products",
-            "row_count": 5,
+            "row_count": 120,
             "column_count": 3,
-            "size_bytes": 1024,
+            "size_bytes": 9600,
+            "description": "Tabela de produtos de seguro (auto, vida, patrimonial, etc.)",
             "columns": [
-                {"name": "product_code", "type": "char", "length": 10, "format": "", "label": "Product Code"},
-                {"name": "product_name", "type": "char", "length": 50, "format": "", "label": "Product Name"},
-                {"name": "product_category", "type": "char", "length": 30, "format": "", "label": "Product Category"},
+                {"name": "cod_produto", "type": "num", "length": 8, "format": "BEST5.", "label": "Codigo Produto"},
+                {"name": "nome_produto", "type": "char", "length": 50, "format": "", "label": "Nome Produto"},
+                {"name": "categoria_produto", "type": "char", "length": 30, "format": "", "label": "Categoria Produto"},
             ],
         },
     }
@@ -505,12 +572,29 @@ catalog:
     return config_path
 
 
+def copy_real_programs():
+    """Copy real MAPFRE SAS programs into mock environment if available."""
+    import shutil
+    real_dir = os.path.join(BASE_DIR, "real_sas_programs")
+    if not os.path.exists(real_dir):
+        print("[SKIP] No real_sas_programs directory found")
+        return
+
+    count = 0
+    for fname in os.listdir(real_dir):
+        if fname.endswith(".sas"):
+            src = os.path.join(real_dir, fname)
+            dst = os.path.join(PROGRAMS_DIR, fname)
+            shutil.copy2(src, dst)
+            count += 1
+    print(f"[OK] {count} real SAS programs copied to mock environment")
+
+
 def create_fixture_programs():
     """Also copy key programs to fixtures for unit tests."""
     fixtures_dir = os.path.join(BASE_DIR, "fixtures", "sample_programs")
     os.makedirs(fixtures_dir, exist_ok=True)
 
-    # Copy from programs dir
     import shutil
     for name in ["etl_load_customers.sas", "risk_model_scoring.sas"]:
         src = os.path.join(PROGRAMS_DIR, name)
@@ -527,6 +611,7 @@ if __name__ == "__main__":
 
     create_directories()
     create_sas_programs()
+    copy_real_programs()
     create_datasets()
     config_path = create_test_config()
     create_fixture_programs()
