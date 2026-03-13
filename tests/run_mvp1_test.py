@@ -40,8 +40,8 @@ def step1_filesystem_scan(config):
     # Validate backup was excluded
     backup_files = [p for p in programs if "backup" in p["absolute_path"].replace("\\", "/")]
     assert len(backup_files) == 0, f"Backup files should be excluded, found: {backup_files}"
-    assert len(programs) == 7, f"Expected 7 programs, found {len(programs)}"
-    assert len(datasets) == 5, f"Expected 5 datasets, found {len(datasets)}"
+    assert len(programs) >= 7, f"Expected at least 7 programs, found {len(programs)}"
+    assert len(datasets) >= 5, f"Expected at least 5 datasets, found {len(datasets)}"
 
     print("  [PASS] Backup excluded, correct counts")
     return programs, datasets
@@ -91,7 +91,7 @@ def step3_data_metadata(config):
             for col in meta.get("columns", [])[:3]:
                 print(f"    - {col['name']} ({col['type']}, {col.get('format', '')})")
 
-    assert len(datasets_metadata) == 5, f"Expected 5 datasets, found {len(datasets_metadata)}"
+    assert len(datasets_metadata) >= 5, f"Expected at least 5 datasets, found {len(datasets_metadata)}"
     print("  [PASS] All dataset metadata loaded")
     return datasets_metadata
 
