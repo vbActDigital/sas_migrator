@@ -109,7 +109,7 @@ class DataCatalogGenerator:
         pii = []
         for col in columns:
             col_name = col.get("name", "").lower()
-            if col_name in PII_KEYWORDS:
+            if col_name in PII_KEYWORDS or any(kw in col_name for kw in PII_KEYWORDS):
                 pii.append(col.get("name", ""))
         return pii
 
