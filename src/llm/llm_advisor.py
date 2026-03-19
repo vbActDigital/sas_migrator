@@ -70,6 +70,41 @@ Respond in JSON with keys: "issues" (list), "suggestions" (list), "correctness_p
 """
         return self._call_and_parse(prompt, f"You are a {target} migration expert.")
 
+    def suggest_manual_intervention(self, program_info: Dict, intervention: Dict,
+                                       target_platform: str) -> Dict:
+        """Use LLM to suggest how to handle a manual intervention item."""
+        prompt = f"""A SAS program requires manual intervention during migration to {target_platform}.
+Analyze the program context and provide a detailed, actionable suggestion for how to resolve this.
+
+PROGRAM: {program_info.get('filename', 'unknown')}
+COMPLEXITY: {program_info.get('complexity_level', 'N/A')} (score: {program_info.get('complexity_score', 0)})
+PROCS USED: {', '.join(program_info.get('procs_used', []))}
+HAS HASH OBJECTS: {program_info.get('has_hash_objects', False)}
+HAS DYNAMIC SQL: {program_info.get('has_dynamic_sql', False)}
+MACROS DEFINED: {', '.join(program_info.get('macros_defined', []))}
+TABLES READ: {', '.join(program_info.get('tables_read', [])[:10])}
+TABLES CREATED: {', '.join(program_info.get('tables_created', [])[:10])}
+
+INTERVENTION NEEDED:
+  Severity: {intervention.get('severity', 'N/A')}
+  Reason: {intervention.get('reason', 'N/A')}
+
+TARGET PLATFORM: {target_platform}
+
+Respond in JSON with keys:
+- "approach": (str) recommended migration approach step by step
+- "target_services": (list of str) specific {target_platform} services/features to use
+- "code_pattern": (str) example code snippet or pseudocode for the target platform
+- "effort_estimate": (str) estimated effort (hours/days)
+- "risks": (list of str) potential risks or caveats
+- "testing_notes": (str) how to validate the manual conversion
+"""
+        return self._call_and_parse(
+            prompt,
+            f"You are an expert in SAS migration to {target_platform}. "
+            f"Provide practical, implementation-ready suggestions.",
+        )
+
     def suggest_gap_resolution(self, gap_report: Dict) -> Dict:
         prompt = f"""Suggest resolutions for these SAS migration gaps.
 

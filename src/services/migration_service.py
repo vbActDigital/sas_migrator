@@ -135,6 +135,34 @@ class MigrationService:
             with open(gap_path, "w", encoding="utf-8") as f:
                 json.dump(suggestions, f, indent=2)
 
+        # Step 5: LLM suggestions for manual interventions
+        if llm_gaps and self.llm_advisor and manual_interventions:
+            logger.info("Step 5: Generating LLM suggestions for %d manual intervention(s)...",
+                        len(manual_interventions))
+            programs_by_name = {
+                p.get("filename", ""): p for p in inventory.get("programs", [])
+            }
+            for intervention in manual_interventions:
+                prog_info = programs_by_name.get(intervention["program"], {})
+                try:
+                    suggestion = self.llm_advisor.suggest_manual_intervention(
+                        prog_info, intervention, self.platform,
+                    )
+                    intervention["llm_suggestion"] = suggestion
+                except Exception as e:
+                    logger.warning("LLM suggestion failed for %s: %s",
+                                   intervention["program"], e)
+
+            # Save enriched interventions
+            interventions_path = os.path.join(output_dir, "manual_interventions.json")
+            with open(interventions_path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "platform": self.platform,
+                    "total": len(manual_interventions),
+                    "interventions": manual_interventions,
+                }, f, indent=2, default=str)
+            results["manual_interventions_report"] = interventions_path
+
         logger.info(
             "Migration complete: %d/%d programs converted, %d need manual intervention",
             converted_count, len(inventory.get("programs", [])), len(manual_interventions),

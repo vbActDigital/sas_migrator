@@ -109,10 +109,24 @@ def migrate(inventory, config, sas_path, out, target, llm_review, llm_gaps, vali
     )
 
     click.echo(f"\nMigracao completa. Artefatos em: {out}")
+    if results.get("converted") is not None:
+        total = results.get("total_programs", 0)
+        converted = results.get("converted", 0)
+        click.echo(f"\n  Programas convertidos: {converted}/{total}")
+
     if results.get("manual_interventions"):
-        click.echo(f"\n  INTERVENCAO MANUAL necessaria:")
+        click.echo(f"\n  INTERVENCAO MANUAL necessaria ({len(results['manual_interventions'])} itens):")
         for item in results["manual_interventions"]:
             click.echo(f"    [{item['severity']}] {item['program']}: {item['reason']}")
+            if item.get("llm_suggestion"):
+                suggestion = item["llm_suggestion"]
+                if suggestion.get("approach"):
+                    click.echo(f"      Sugestao: {suggestion['approach'][:200]}")
+                if suggestion.get("effort_estimate"):
+                    click.echo(f"      Esforco estimado: {suggestion['effort_estimate']}")
+
+    if results.get("manual_interventions_report"):
+        click.echo(f"\n  Relatorio detalhado: {results['manual_interventions_report']}")
 
 
 @cli.command()
@@ -170,10 +184,24 @@ def run(sas_path, data_path, out, target, config, llm):
     click.echo(f"  Plataforma alvo: {target}")
     click.echo(f"  Artefatos em:    {out}")
 
+    if mig_results.get("converted") is not None:
+        total = mig_results.get("total_programs", 0)
+        converted = mig_results.get("converted", 0)
+        click.echo(f"  Programas convertidos: {converted}/{total}")
+
     if mig_results.get("manual_interventions"):
         click.echo(f"\n  INTERVENCAO MANUAL necessaria ({len(mig_results['manual_interventions'])} itens):")
         for item in mig_results["manual_interventions"]:
             click.echo(f"    [{item['severity']}] {item['program']}: {item['reason']}")
+            if item.get("llm_suggestion"):
+                suggestion = item["llm_suggestion"]
+                if suggestion.get("approach"):
+                    click.echo(f"      Sugestao: {suggestion['approach'][:200]}")
+                if suggestion.get("effort_estimate"):
+                    click.echo(f"      Esforco estimado: {suggestion['effort_estimate']}")
+
+    if mig_results.get("manual_interventions_report"):
+        click.echo(f"\n  Relatorio detalhado: {mig_results['manual_interventions_report']}")
     else:
         click.echo(f"\n  Todos os programas foram convertidos automaticamente.")
 
