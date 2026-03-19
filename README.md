@@ -144,6 +144,29 @@ O toolkit converte automaticamente a maioria dos padroes SAS comuns e **reporta 
 | PROC MIXED/IML | MEDIUM | Spark MLlib / Snowpark ML |
 | Complexidade VERY_HIGH | MEDIUM | Revisao manual recomendada |
 
+### Sugestoes LLM para intervencao manual
+
+Quando o LLM esta habilitado (`--llm` ou `--llm-gaps`), o toolkit consulta a LLM para cada item que precisa de intervencao manual e gera sugestoes detalhadas:
+
+- **Abordagem recomendada** passo a passo para a plataforma alvo
+- **Servicos/features** especificos da plataforma a utilizar (ex: Snowpark ML, Spark MLlib, Delta Live Tables)
+- **Exemplo de codigo** ou pseudocodigo para a plataforma alvo
+- **Estimativa de esforco** em horas/dias
+- **Riscos** e pontos de atencao
+- **Notas de teste** para validar a conversao manual
+
+As sugestoes sao salvas em `manual_interventions.json` e exibidas no terminal:
+
+```
+  INTERVENCAO MANUAL necessaria (3 itens):
+    [HIGH] risk_model.sas: Hash objects detectados - requer reescrita manual
+      Sugestao: Substituir hash lookup por broadcast join usando Snowpark...
+      Esforco estimado: 4-8 horas
+    [MEDIUM] scoring.sas: PROCs estatisticos (LOGISTIC, REG)
+      Sugestao: Migrar para Snowpark ML usando LogisticRegression...
+      Esforco estimado: 2-3 dias
+```
+
 ## Configuracao
 
 ### 1. Via CLI (sem arquivo YAML)
@@ -287,7 +310,8 @@ output/
     │   └── *_pyspark.py        # PySpark (Databricks)
     ├── validation/             # Scripts de validacao pos-migracao
     ├── gap_report.json         # Gaps + itens de intervencao manual
-    └── gap_suggestions.json    # Sugestoes LLM para gaps
+    ├── gap_suggestions.json    # Sugestoes LLM para gaps
+    └── manual_interventions.json # Intervencoes manuais com sugestoes LLM
 ```
 
 ## Relatorio PDF
