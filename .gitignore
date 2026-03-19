@@ -15,8 +15,10 @@ venv/
 *.log
 .pytest_cache/
 .claude/
+output/
 docker_output/
 mvp1_outputs/
 mvp1_mvp2_outputs/
 report_output/
+logs/
 *.sh
