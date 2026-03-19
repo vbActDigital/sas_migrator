@@ -1,0 +1,54 @@
+project:
+  name: "SAS Migration - Databricks"
+  client: "ACME Corp"
+
+# ── SAS Source ─────────────────────────────────────────────
+sas_environment:
+  source_type: filesystem
+  code_paths:
+    - /sas/programs
+    - /sas/macros
+  data_paths:
+    - /sas/data
+  log_paths:
+    - /sas/logs
+  exclude_patterns:
+    - backup
+    - archive
+    - test
+
+# ── Target Platform ────────────────────────────────────────
+target:
+  platform: databricks
+  workspace_url: ${DATABRICKS_HOST}
+  token: ${DATABRICKS_TOKEN}
+  catalog: sas_migration
+  schema_bronze: bronze_sas
+  schema_silver: silver_sas
+  volume_path: /Volumes/sas_migration/staging
+
+# ── Library Mapping ────────────────────────────────────────
+library_mapping:
+  rawdata:
+    catalog: sas_migration
+    schema: bronze_sas
+  dw:
+    catalog: sas_migration
+    schema: silver_sas
+
+# ── Data Catalog Options ───────────────────────────────────
+catalog:
+  output_format:
+    - json
+    - markdown
+  detect_pii: true
+  infer_domains: true
+
+# ── LLM Integration (optional) ────────────────────────────
+llm:
+  provider: openai
+  api_key_env: OPENAI_API_KEY
+  models:
+    fast: gpt-4o-mini
+    balanced: gpt-4o
+    powerful: gpt-4o
