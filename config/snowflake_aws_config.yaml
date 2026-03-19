@@ -2,7 +2,10 @@ project:
   name: "SAS Migration - Snowflake"
   client: "MAPFRE"
 
+# ── SAS Source ─────────────────────────────────────────────
+# Option 1: Filesystem scan (default)
 sas_environment:
+  source_type: filesystem    # filesystem | odbc | metadata_server
   code_paths:
     - /sas/programs
     - /sas/macros
@@ -15,6 +18,36 @@ sas_environment:
     - archive
     - test
 
+# Option 2: ODBC connection (uncomment to use)
+# sas_environment:
+#   source_type: odbc
+#   odbc:
+#     dsn: SAS_PROD
+#     user: ${SAS_USER}
+#     password: ${SAS_PASSWORD}
+#   code_paths:
+#     - /sas/programs
+#   data_paths: []
+#   log_paths: []
+#   exclude_patterns:
+#     - backup
+
+# Option 3: SAS Metadata Server (uncomment to use)
+# sas_environment:
+#   source_type: metadata_server
+#   metadata_server:
+#     host: ${SAS_META_HOST}
+#     port: 8561
+#     user: ${SAS_META_USER}
+#     password: ${SAS_META_PASSWORD}
+#   code_paths:
+#     - /sas/programs
+#   data_paths: []
+#   log_paths: []
+#   exclude_patterns:
+#     - backup
+
+# ── Target Platform ────────────────────────────────────────
 target:
   platform: snowflake
   account: ${SNOWFLAKE_ACCOUNT}
@@ -30,6 +63,7 @@ target:
     s3_prefix: raw/
     iam_role: ${AWS_IAM_ROLE}
 
+# ── Library Mapping ────────────────────────────────────────
 library_mapping:
   rawdata:
     database: SAS_MIGRATION
@@ -38,6 +72,7 @@ library_mapping:
     database: SAS_MIGRATION
     schema: REFINED
 
+# ── Data Catalog Options ───────────────────────────────────
 catalog:
   output_format:
     - json
@@ -45,9 +80,11 @@ catalog:
   detect_pii: true
   infer_domains: true
 
+# ── LLM Integration (optional) ────────────────────────────
 llm:
   provider: openai
   api_key_env: OPENAI_API_KEY
+  # base_url: https://api.openai.com/v1   # Override for Azure OpenAI or other providers
   models:
     fast: gpt-4o-mini
     balanced: gpt-4o

@@ -1,12 +1,13 @@
 services:
-  sas-migrator-demo:
+  sas-migrator:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: sas-migrator-demo
+    container_name: sas-migrator
     volumes:
-      - ./docker_output:/app/docker_output
+      - ./output:/app/output
     environment:
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
-    command: python tests/run_docker_demo.py
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    command: python tests/run_mvp1_docker.py
