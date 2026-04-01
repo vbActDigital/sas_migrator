@@ -5,6 +5,7 @@ from typing import Dict, Optional
 from src.utils.logger import get_logger
 from src.connectors.sas.filesystem_scanner import SASFilesystemScanner
 from src.parsers.sas.sas_code_parser import SASCodeParser
+from src.parsers.sas.sas_code_validator import SASCodeValidator
 from src.parsers.sas.sas_data_parser import SASDataParser
 from src.parsers.sas.lineage_builder import LineageBuilder
 from src.catalog.catalog_generator import DataCatalogGenerator
@@ -69,6 +70,28 @@ class DiscoveryService:
             "edges": len(lineage["edges"]),
         }
 
+        # Step 4.5: Deep code validation
+        logger.info("Step 4.5: Running deep code validation...")
+        validator = SASCodeValidator()
+        validation_findings = []
+        for parsed in parsed_programs:
+            try:
+                prog_findings = validator.validate_program(
+                    parsed["filepath"], parsed
+                )
+                validation_findings.extend(prog_findings)
+            except Exception as e:
+                logger.error("Validation failed for %s: %s", parsed["filename"], e)
+
+        # Cross-program validation
+        try:
+            cross_findings = validator.validate_cross_program(parsed_programs)
+            validation_findings.extend(cross_findings)
+        except Exception as e:
+            logger.error("Cross-program validation failed: %s", e)
+
+        results["validation_findings"] = len(validation_findings)
+
         # Step 5: Generate catalog (optional)
         catalog_data = None
         if catalog:
@@ -115,7 +138,9 @@ class DiscoveryService:
         logger.info("Step 7: Generating Markdown report...")
         report_gen = ReportGenerator(self.config)
         report_path = report_gen.generate_discovery_report(
-            parsed_programs, datasets_metadata, lineage, output_dir=output_dir
+            parsed_programs, datasets_metadata, lineage,
+            validation_findings=validation_findings,
+            output_dir=output_dir,
         )
         results["report"] = report_path
 
@@ -155,6 +180,7 @@ class DiscoveryService:
                     "data_steps": p.get("data_steps", []),
                     "tables_created": p.get("tables_created", []),
                     "tables_read": p.get("tables_read", []),
+                    "accounting_variables": p.get("accounting_variables", {}),
                 }
                 for p in parsed_programs
             ],
@@ -163,6 +189,7 @@ class DiscoveryService:
                          for d in datasets_metadata],
             "lineage": lineage,
             "manual_review": manual_review,
+            "validation_findings": validation_findings,
         }
         with open(inventory_path, "w", encoding="utf-8") as f:
             json.dump(inventory, f, indent=2, default=str)

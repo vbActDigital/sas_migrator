@@ -40,6 +40,9 @@ RE_FORMAT_SPEC = re.compile(r'\b(COMMAX|COMMA|DDMMYY|MMDDYY|YYMMDD|DATE|DATETIME
 RE_LEFT_JOIN = re.compile(r'\bLEFT\s+JOIN\b', re.IGNORECASE)
 RE_INNER_JOIN = re.compile(r'\bINNER\s+JOIN\b', re.IGNORECASE)
 RE_IF_THEN = re.compile(r'\bIF\b.*?\bTHEN\b', re.IGNORECASE)
+RE_KEEP = re.compile(r'\bKEEP\s+([\w\s]+);', re.IGNORECASE)
+RE_ACCOUNTING_VAR = re.compile(r'\bC\d{7,}\b')
+RE_VAR_ASSIGNMENT = re.compile(r'^\s*([A-Za-z_]\w*)\s*=[^=]', re.MULTILINE)
 
 STATISTICAL_PROCS = {"logistic", "reg", "glm", "mixed", "univariate", "genmod", "phreg", "lifetest", "nlin"}
 SAS_BUILTIN_MACROS = {"if", "then", "else", "do", "end", "let", "put", "str", "scan", "substr",
@@ -81,6 +84,9 @@ class SASCodeParser:
         if_then_count = len(RE_IF_THEN.findall(content))
         has_zip_processing = bool(re.search(r'FILENAME\s+\w+\s+ZIP', content, re.IGNORECASE))
         has_infile_processing = len(infile_stmts) > 0
+        keep_variables = self._extract_keep_variables(content)
+        variable_assignments = self._extract_variable_assignments(content)
+        accounting_variables = self._extract_accounting_variables(content)
 
         complexity = self._compute_complexity(
             data_steps, procs_used, macro_definitions, merge_statements,
@@ -125,6 +131,9 @@ class SASCodeParser:
             "if_then_chains": if_then_count,
             "has_zip_processing": has_zip_processing,
             "has_infile_processing": has_infile_processing,
+            "keep_variables": keep_variables,
+            "variable_assignments": variable_assignments,
+            "accounting_variables": accounting_variables,
         }
 
     def _extract_libnames(self, content: str) -> List[Dict]:
@@ -230,6 +239,38 @@ class SASCodeParser:
 
     def _extract_unc_paths(self, content: str) -> List[str]:
         return list({m.group(0) for m in RE_UNC_PATH.finditer(content)})
+
+    def _extract_keep_variables(self, content: str) -> List[str]:
+        """Extract all variable names from KEEP statements."""
+        keep_vars = set()
+        for m in RE_KEEP.finditer(content):
+            for v in re.findall(r'\b([A-Za-z_]\w*)\b', m.group(1)):
+                if v.upper() not in SAS_BUILTIN_MACROS:
+                    keep_vars.add(v.upper())
+        return sorted(keep_vars)
+
+    def _extract_variable_assignments(self, content: str) -> List[str]:
+        """Extract variable names from assignment statements (left side of =)."""
+        assigned = set()
+        for m in RE_VAR_ASSIGNMENT.finditer(content):
+            name = m.group(1).upper()
+            if name not in SAS_BUILTIN_MACROS:
+                assigned.add(name)
+        return sorted(assigned)
+
+    def _extract_accounting_variables(self, content: str) -> Dict:
+        """Extract accounting variables (C-prefix) - both assigned and referenced."""
+        assigned = set()
+        referenced = set()
+        for m in re.finditer(r'^\s*(C\d{7,})\s*=', content, re.MULTILINE):
+            assigned.add(m.group(1).upper())
+        for m in RE_ACCOUNTING_VAR.finditer(content):
+            referenced.add(m.group(0).upper())
+        return {
+            "assigned": sorted(assigned),
+            "referenced": sorted(referenced),
+            "referenced_but_not_assigned": sorted(referenced - assigned),
+        }
 
     def _compute_complexity(self, data_steps, procs, macros, merges,
                             has_hash, has_dynamic_sql, includes,

@@ -15,21 +15,25 @@ class ReportGenerator:
 
     def generate_discovery_report(self, programs: List[Dict], datasets: List[Dict],
                                    lineage: Dict, complexity_report: Optional[Dict] = None,
+                                   validation_findings: Optional[List[Dict]] = None,
                                    output_dir: str = "output",
                                    format: str = "markdown") -> str:
         os.makedirs(output_dir, exist_ok=True)
-        report = self._build_markdown(programs, datasets, lineage, complexity_report)
+        report = self._build_markdown(programs, datasets, lineage, complexity_report,
+                                       validation_findings=validation_findings)
         filepath = os.path.join(output_dir, "discovery_report.md")
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(report)
         logger.info("Discovery report generated: %s", filepath)
         return filepath
 
-    def _build_markdown(self, programs, datasets, lineage, complexity_report) -> str:
+    def _build_markdown(self, programs, datasets, lineage, complexity_report,
+                        validation_findings=None) -> str:
         sections = []
 
         # 1. Executive Summary
-        sections.append(self._section_executive_summary(programs, datasets, lineage))
+        sections.append(self._section_executive_summary(programs, datasets, lineage,
+                                                         validation_findings=validation_findings))
         # 2. Program Inventory
         sections.append(self._section_program_inventory(programs))
         # 3. Dataset Inventory
@@ -38,9 +42,11 @@ class ReportGenerator:
         sections.append(self._section_lineage(lineage))
         # 5. Complexity Analysis
         sections.append(self._section_complexity(programs))
-        # 6. Limitations
+        # 6. Code Integrity and Validation Findings
+        sections.append(self._section_validation_findings(validation_findings or []))
+        # 7. Limitations
         sections.append(self._section_limitations())
-        # 7. Next Steps
+        # 8. Next Steps
         sections.append(self._section_next_steps())
 
         header = (
@@ -52,7 +58,8 @@ class ReportGenerator:
         )
         return header + "\n\n".join(sections)
 
-    def _section_executive_summary(self, programs, datasets, lineage) -> str:
+    def _section_executive_summary(self, programs, datasets, lineage,
+                                    validation_findings=None) -> str:
         complexity_dist = {}
         for p in programs:
             level = p.get("complexity_level", "UNKNOWN")
@@ -66,6 +73,20 @@ class ReportGenerator:
             p.get("complexity_level") in ("HIGH", "VERY_HIGH") for p in programs
         ) else "Straightforward migration feasible"
 
+        # Validation findings summary
+        findings = validation_findings or []
+        severity_counts = {}
+        for f in findings:
+            sev = f.get("severity", "UNKNOWN")
+            severity_counts[sev] = severity_counts.get(sev, 0) + 1
+
+        validation_line = ""
+        if findings:
+            validation_line = (
+                f"| Achados de Validacao | {len(findings)} "
+                f"({', '.join(f'{k}: {v}' for k, v in sorted(severity_counts.items()))}) |\n"
+            )
+
         return (
             f"## 1. Executive Summary\n\n"
             f"| Metric | Value |\n"
@@ -75,7 +96,8 @@ class ReportGenerator:
             f"| Lineage Nodes | {len(lineage.get('nodes', []))} |\n"
             f"| Lineage Edges | {len(lineage.get('edges', []))} |\n"
             f"| Unique PROCs | {len(total_procs)} |\n"
-            f"| Complexity Distribution | {complexity_dist} |\n\n"
+            f"| Complexity Distribution | {complexity_dist} |\n"
+            f"{validation_line}\n"
             f"**Recommended Strategy:** {strategy}\n"
         )
 
@@ -154,23 +176,95 @@ class ReportGenerator:
             )
         return "\n".join(lines)
 
+    def _section_validation_findings(self, findings: List[Dict]) -> str:
+        """Generate detailed validation findings section."""
+        lines = ["## 6. Analise de Integridade e Qualidade do Codigo\n"]
+
+        if not findings:
+            lines.append("Nenhum problema de integridade detectado.\n")
+            return "\n".join(lines)
+
+        # Group by severity
+        severity_order = ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
+        severity_labels = {
+            "CRITICAL": "CRITICO - Requer atencao imediata",
+            "HIGH": "ALTO - Impacto significativo nos resultados",
+            "MEDIUM": "MEDIO - Revisar antes da migracao",
+            "LOW": "BAIXO - Verificar se e intencional",
+        }
+        recommendation_labels = {
+            "EXTRACAO_MANUAL": "Extracao Manual",
+            "CORRECAO_CODIGO": "Correcao de Codigo",
+            "CONFIGURACAO_EXPORT": "Configuracao de Export",
+            "REVISAO_MANUAL": "Revisao Manual",
+        }
+
+        grouped = {}
+        for f in findings:
+            sev = f.get("severity", "UNKNOWN")
+            if sev not in grouped:
+                grouped[sev] = []
+            grouped[sev].append(f)
+
+        # Summary table
+        lines.append("### Resumo dos Achados\n")
+        lines.append("| Severidade | Quantidade | Categorias |")
+        lines.append("|------------|------------|------------|")
+        for sev in severity_order:
+            if sev in grouped:
+                items = grouped[sev]
+                categories = set(f.get("category", "") for f in items)
+                lines.append(
+                    f"| **{sev}** | {len(items)} | "
+                    f"{', '.join(sorted(categories))} |"
+                )
+        lines.append("")
+
+        # Detailed findings
+        finding_num = 0
+        for sev in severity_order:
+            if sev not in grouped:
+                continue
+
+            lines.append(f"### {severity_labels.get(sev, sev)}\n")
+
+            for f in grouped[sev]:
+                finding_num += 1
+                rec_type = f.get("recommendation_type", "REVISAO_MANUAL")
+                rec_label = recommendation_labels.get(rec_type, rec_type)
+                line_info = f" (linha ~{f['line']})" if f.get("line", 0) > 0 else ""
+
+                lines.append(f"#### Achado #{finding_num}: [{sev}] {f['category']}\n")
+                lines.append(f"**Programa:** `{f.get('program', 'N/A')}`{line_info}\n")
+                lines.append(f"**Erro encontrado:**  ")
+                lines.append(f"{f.get('description', 'N/A')}\n")
+                lines.append(f"**Por que nao foi processado / Impacto:**  ")
+                lines.append(f"{f.get('impact', 'N/A')}\n")
+                lines.append(f"**Recomendacao ({rec_label}):**  ")
+                lines.append(f"{f.get('recommendation', 'N/A')}\n")
+                lines.append("---\n")
+
+        return "\n".join(lines)
+
     def _section_limitations(self) -> str:
         return (
-            "## 6. Limitations and Notes\n\n"
+            "## 7. Limitations and Notes\n\n"
             "- SAS code parser is regex-based, not a full AST parser. Coverage ~80% of common patterns.\n"
             "- Dataset metadata extracted from .meta.json fallback files (pyreadstat may not read all formats).\n"
             "- PROC LOGISTIC, REG, GLM, MIXED have no direct Snowflake SQL equivalent.\n"
             "- Hash objects and CALL EXECUTE require manual review.\n"
             "- Lineage is inferred from code; runtime dependencies may differ.\n"
+            "- Validacao de integridade detecta padroes comuns de erro mas nao substitui revisao manual completa.\n"
         )
 
     def _section_next_steps(self) -> str:
         return (
-            "## 7. Next Steps\n\n"
-            "1. Review complexity analysis and prioritize programs for migration.\n"
-            "2. Validate lineage graph with business stakeholders.\n"
-            "3. Run MVP2 to generate Snowflake DDL, COPY INTO, and transpiled code.\n"
-            "4. Enable LLM review for architecture recommendations.\n"
-            "5. Set up Snowflake staging environment and test data loads.\n"
-            "6. Plan UAT with business users.\n"
+            "## 8. Next Steps\n\n"
+            "1. **URGENTE:** Resolver todos os achados CRITICOS da secao 6 antes de prosseguir.\n"
+            "2. Review complexity analysis and prioritize programs for migration.\n"
+            "3. Validate lineage graph with business stakeholders.\n"
+            "4. Run MVP2 to generate Snowflake DDL, COPY INTO, and transpiled code.\n"
+            "5. Enable LLM review for architecture recommendations.\n"
+            "6. Set up staging environment and test data loads.\n"
+            "7. Plan UAT with business users.\n"
         )
