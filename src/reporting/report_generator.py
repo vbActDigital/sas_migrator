@@ -156,23 +156,52 @@ class ReportGenerator:
 
     def _section_complexity(self, programs) -> str:
         lines = ["## 5. Complexity Analysis\n"]
-        lines.append("### Top 20 Most Complex Programs\n")
-        lines.append("| Rank | Program | Score | Level | Key Factors |")
-        lines.append("|------|---------|-------|-------|-------------|")
+        lines.append("### Matriz de Complexidade (CT = PLP + PDI + PVD + PRS)\n")
+        lines.append("| Dimensao | Descricao |")
+        lines.append("|----------|-----------|")
+        lines.append("| **PLP** | Logica de Programacao (macros, hash, IF/THEN, joins, data steps) |")
+        lines.append("| **PDI** | Dependencias e Integracao (fontes de dados, includes, libnames, UNC) |")
+        lines.append("| **PVD** | Volume e Variedade de Dados (merges, ZIP, formatos, DBMS) |")
+        lines.append("| **PRS** | Recursos Especificos SAS (PROCs estatisticas, hash, named literals) |")
+        lines.append("")
+        lines.append("Nivel por dimensao: Baixa (1-2), Media (3-5), Alta (>5)\n")
+
+        lines.append("### Programas por Complexidade\n")
+        lines.append("| Programa | CT | Nivel | PLP | PDI | PVD | PRS | Esforco Est. |")
+        lines.append("|----------|----|-------|-----|-----|-----|-----|--------------|")
         sorted_progs = sorted(programs, key=lambda x: x.get("complexity_score", 0), reverse=True)[:20]
-        for i, p in enumerate(sorted_progs, 1):
-            factors = []
-            if p.get("has_hash_objects"):
-                factors.append("Hash Objects")
-            if p.get("has_dynamic_sql"):
-                factors.append("Dynamic SQL")
-            if p.get("merge_statements"):
-                factors.append(f"MERGE ({len(p['merge_statements'])} tables)")
-            if p.get("macro_definitions"):
-                factors.append(f"Macros ({len(p['macro_definitions'])})")
+        for p in sorted_progs:
+            dims = p.get("complexity_dimensions", {})
+            plp = dims.get("PLP", 0)
+            pdi = dims.get("PDI", 0)
+            pvd = dims.get("PVD", 0)
+            prs = dims.get("PRS", 0)
+            plp_n = dims.get("PLP_nivel", "?")
+            pdi_n = dims.get("PDI_nivel", "?")
+            pvd_n = dims.get("PVD_nivel", "?")
+            prs_n = dims.get("PRS_nivel", "?")
+            esforco = dims.get("esforco_hh", "N/A")
             lines.append(
-                f"| {i} | {p.get('filename', '')} | {p.get('complexity_score', 0)} | "
-                f"{p.get('complexity_level', '')} | {', '.join(factors) or 'Standard'} |"
+                f"| {p.get('filename', '')} | {p.get('complexity_score', 0)} | "
+                f"{p.get('complexity_level', '')} | "
+                f"{plp} ({plp_n}) | {pdi} ({pdi_n}) | {pvd} ({pvd_n}) | {prs} ({prs_n}) | "
+                f"{esforco} |"
+            )
+
+        lines.append("")
+        lines.append("### Fatores Detalhados\n")
+        lines.append("| Programa | Hash | Dyn SQL | Macros | Merges | Joins | IF/THEN | Lines |")
+        lines.append("|----------|------|---------|--------|--------|-------|---------|-------|")
+        for p in sorted_progs:
+            lines.append(
+                f"| {p.get('filename', '')} | "
+                f"{'Sim' if p.get('has_hash_objects') else '-'} | "
+                f"{'Sim' if p.get('has_dynamic_sql') else '-'} | "
+                f"{len(p.get('macro_definitions', []))} | "
+                f"{len(p.get('merge_statements', []))} | "
+                f"{p.get('join_count', 0)} | "
+                f"{p.get('if_then_chains', 0)} | "
+                f"{p.get('line_count', 0)} |"
             )
         return "\n".join(lines)
 

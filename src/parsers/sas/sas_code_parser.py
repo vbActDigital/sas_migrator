@@ -88,16 +88,18 @@ class SASCodeParser:
         variable_assignments = self._extract_variable_assignments(content)
         accounting_variables = self._extract_accounting_variables(content)
 
-        complexity = self._compute_complexity(
-            data_steps, procs_used, macro_definitions, merge_statements,
-            has_hash, has_dynamic_sql, includes,
-            macro_variables=macro_variables,
-            proc_imports=proc_imports,
-            proc_exports=proc_exports,
-            join_count=join_count,
-            if_then_count=if_then_count,
-            has_zip_processing=has_zip_processing,
-            line_count=len(lines),
+        complexity_detail = self._compute_complexity_dimensions(
+            data_steps=data_steps, procs_used=procs_used,
+            macro_definitions=macro_definitions, merge_statements=merge_statements,
+            has_hash=has_hash, has_dynamic_sql=has_dynamic_sql,
+            includes=includes, macro_variables=macro_variables,
+            proc_imports=proc_imports, proc_exports=proc_exports,
+            join_count=join_count, if_then_count=if_then_count,
+            has_zip_processing=has_zip_processing, line_count=len(lines),
+            datasets_read=datasets_read, libnames=libnames,
+            unc_paths=unc_paths, filenames=filenames,
+            infile_stmts=infile_stmts, format_specs=format_specs,
+            named_literals=named_literals,
         )
 
         return {
@@ -117,8 +119,9 @@ class SASCodeParser:
             "includes": includes,
             "has_hash_objects": has_hash,
             "has_dynamic_sql": has_dynamic_sql,
-            "complexity_score": complexity,
-            "complexity_level": self._complexity_level(complexity),
+            "complexity_score": complexity_detail["CT"],
+            "complexity_level": self._complexity_level(complexity_detail["CT"]),
+            "complexity_dimensions": complexity_detail,
             # New fields
             "proc_imports": proc_imports,
             "proc_exports": proc_exports,
@@ -272,57 +275,261 @@ class SASCodeParser:
             "referenced_but_not_assigned": sorted(referenced - assigned),
         }
 
-    def _compute_complexity(self, data_steps, procs, macros, merges,
-                            has_hash, has_dynamic_sql, includes,
-                            macro_variables=None, proc_imports=None,
-                            proc_exports=None, join_count=0,
-                            if_then_count=0, has_zip_processing=False,
-                            line_count=0) -> int:
-        score = 0
-        score += len(data_steps) * 1
-        score += len(merges) * 5
-        for proc in procs:
-            if proc.lower() == "sql":
-                score += 3
-            elif proc.lower() in STATISTICAL_PROCS:
-                score += 5
-            elif proc.lower() == "import":
-                score += 2
-            elif proc.lower() == "export":
-                score += 1
-        score += len(macros) * 2
-        if has_hash:
-            score += 5
-        if has_dynamic_sql:
-            score += 5
-        score += len(includes) * 1
-        # New scoring
-        if macro_variables:
-            score += min(len(macro_variables), 5)  # cap at 5
-        if proc_imports:
-            score += len(proc_imports) * 2
-        if proc_exports:
-            score += len(proc_exports) * 1
-        score += join_count * 2
-        if if_then_count > 10:
-            score += 5
-        elif if_then_count > 5:
-            score += 3
-        if has_zip_processing:
-            score += 5
-        # Lines-based bonus for very large programs
-        if line_count > 500:
-            score += 5
-        if line_count > 1000:
-            score += 5
-        return score
+    def _compute_complexity_dimensions(self, **kw) -> Dict:
+        """
+        Compute complexity using 4 dimensions from the standard matrix:
+          PLP = Logica de Programacao
+          PDI = Dependencias e Integracao
+          PVD = Volume e Variedade de Dados
+          PRS = Recursos Especificos SAS
+          CT  = PLP + PDI + PVD + PRS
 
-    def _complexity_level(self, score: int) -> str:
-        if score <= 10:
+        Each dimension scores: Baixa (1-2), Media (3-5), Alta (>5, capped at 8).
+        CT range: 4 (all Baixa) to 32 (all Alta).
+        """
+        plp = self._score_plp(kw)
+        pdi = self._score_pdi(kw)
+        pvd = self._score_pvd(kw)
+        prs = self._score_prs(kw)
+        ct = plp + pdi + pvd + prs
+
+        return {
+            "PLP": plp, "PLP_nivel": self._dim_level(plp),
+            "PDI": pdi, "PDI_nivel": self._dim_level(pdi),
+            "PVD": pvd, "PVD_nivel": self._dim_level(pvd),
+            "PRS": prs, "PRS_nivel": self._dim_level(prs),
+            "CT": ct,
+            "esforco_hh": self._estimate_effort(ct),
+        }
+
+    def _score_plp(self, kw) -> int:
+        """PLP - Logica de Programacao (Codigo)."""
+        score = 0
+        macros = kw.get("macro_definitions", [])
+        has_hash = kw.get("has_hash", False)
+        has_dynamic_sql = kw.get("has_dynamic_sql", False)
+        if_then_count = kw.get("if_then_count", 0)
+        join_count = kw.get("join_count", 0)
+        data_steps = kw.get("data_steps", [])
+        line_count = kw.get("line_count", 0)
+        macro_variables = kw.get("macro_variables") or []
+
+        # Macros: 0=1, 1-5=3, >5=6
+        n_macros = len(macros) + min(len(macro_variables), 5)
+        if n_macros == 0:
+            score += 1
+        elif n_macros <= 5:
+            score += 3
+        else:
+            score += 5
+
+        # Hash objects / arrays complexos -> Alta
+        if has_hash:
+            score += 3
+
+        # Dynamic SQL -> complexidade extra
+        if has_dynamic_sql:
+            score += 2
+
+        # IF-THEN aninhamento
+        if if_then_count > 20:
+            score += 3
+        elif if_then_count > 10:
+            score += 2
+        elif if_then_count > 5:
+            score += 1
+
+        # Joins
+        if join_count > 6:
+            score += 2
+        elif join_count > 2:
+            score += 1
+
+        # Data steps encadeados (processos encadeados)
+        if len(data_steps) > 10:
+            score += 2
+        elif len(data_steps) > 5:
+            score += 1
+
+        # Volume de codigo
+        if line_count > 1000:
+            score += 2
+        elif line_count > 500:
+            score += 1
+
+        return min(score, 8)  # cap
+
+    def _score_pdi(self, kw) -> int:
+        """PDI - Dependencias e Integracao."""
+        score = 0
+        datasets_read = kw.get("datasets_read", [])
+        includes = kw.get("includes", [])
+        libnames = kw.get("libnames", [])
+        unc_paths = kw.get("unc_paths", [])
+        proc_imports = kw.get("proc_imports") or []
+        proc_exports = kw.get("proc_exports") or []
+        filenames = kw.get("filenames") or []
+        has_dynamic_sql = kw.get("has_dynamic_sql", False)
+
+        # Datasets lidos (fontes de dados)
+        n_reads = len(datasets_read)
+        if n_reads > 8:
+            score += 4
+        elif n_reads > 3:
+            score += 2
+        else:
+            score += 1
+
+        # Includes (dependencia de outros scripts)
+        if len(includes) > 3:
+            score += 3
+        elif len(includes) > 0:
+            score += 1
+
+        # Libnames (integracao com sistemas)
+        if len(libnames) > 3:
+            score += 2
+        elif len(libnames) > 0:
+            score += 1
+
+        # UNC paths (acesso a rede/sistemas de arquivos externos)
+        if len(unc_paths) > 0:
+            score += 1
+
+        # PROC IMPORT/EXPORT (integracao de dados)
+        n_io = len(proc_imports) + len(proc_exports)
+        if n_io > 4:
+            score += 2
+        elif n_io > 0:
+            score += 1
+
+        # Filenames / acesso externo
+        if len(filenames) > 2:
+            score += 1
+
+        # Dynamic SQL = dependencia complexa
+        if has_dynamic_sql:
+            score += 1
+
+        return min(score, 8)
+
+    def _score_pvd(self, kw) -> int:
+        """PVD - Volume e Variedade de Dados."""
+        score = 0
+        merge_statements = kw.get("merge_statements", [])
+        has_zip = kw.get("has_zip_processing", False)
+        infile_stmts = kw.get("infile_stmts") or []
+        format_specs = kw.get("format_specs") or []
+        proc_imports = kw.get("proc_imports") or []
+
+        # Merges (complexidade de juncao de dados)
+        n_merges = len(merge_statements)
+        if n_merges > 3:
+            score += 3
+        elif n_merges > 0:
+            score += 2
+        else:
+            score += 1
+
+        # ZIP processing (volume grande)
+        if has_zip:
+            score += 2
+
+        # INFILE (processamento de arquivos brutos)
+        if len(infile_stmts) > 0:
+            score += 1
+
+        # Variedade de formatos
+        n_formats = len(format_specs)
+        if n_formats > 10:
+            score += 2
+        elif n_formats > 5:
+            score += 1
+
+        # Diversidade de fontes (DBMS diferentes nos imports)
+        dbms_types = set()
+        for imp in proc_imports:
+            dbms_types.add(imp.get("dbms", ""))
+        if len(dbms_types) > 2:
+            score += 2
+        elif len(dbms_types) > 1:
+            score += 1
+
+        return min(score, 8)
+
+    def _score_prs(self, kw) -> int:
+        """PRS - Recursos Especificos SAS."""
+        score = 0
+        procs_used = kw.get("procs_used", [])
+        has_hash = kw.get("has_hash", False)
+        named_literals = kw.get("named_literals") or []
+
+        procs_lower = {p.lower() for p in procs_used}
+
+        # PROCs estatisticas especificas (Media)
+        stat_medium = {"reg", "glm", "logistic", "univariate", "genmod", "phreg",
+                        "lifetest", "nlin", "means", "freq"}
+        stat_found = procs_lower & stat_medium
+        # PROCs avancadas (Alta)
+        stat_alta = {"iml", "graph", "ets", "report", "tabulate", "mixed"}
+        alta_found = procs_lower & stat_alta
+
+        if alta_found:
+            score += 5
+        elif stat_found:
+            score += 3
+        else:
+            score += 1
+
+        # Hash objects (recurso avancado)
+        if has_hash:
+            score += 2
+
+        # Named literals (recurso especifico SAS)
+        if len(named_literals) > 0:
+            score += 1
+
+        # PROC FORMAT (customizacao)
+        if "format" in procs_lower:
+            score += 1
+
+        # Quantidade total de PROCs distintas
+        n_procs = len(procs_lower)
+        if n_procs > 7:
+            score += 2
+        elif n_procs > 3:
+            score += 1
+
+        return min(score, 8)
+
+    @staticmethod
+    def _dim_level(score: int) -> str:
+        """Classify a single dimension score."""
+        if score <= 2:
+            return "Baixa"
+        elif score <= 5:
+            return "Media"
+        else:
+            return "Alta"
+
+    @staticmethod
+    def _estimate_effort(ct: int) -> str:
+        """Estimate effort in person-hours based on CT."""
+        if ct <= 8:
+            return "8-24 HH"
+        elif ct <= 14:
+            return "32-80 HH"
+        elif ct <= 20:
+            return "80-160 HH"
+        else:
+            return ">160 HH"
+
+    def _complexity_level(self, ct: int) -> str:
+        if ct <= 8:
             return "LOW"
-        elif score <= 25:
+        elif ct <= 14:
             return "MEDIUM"
-        elif score <= 50:
+        elif ct <= 20:
             return "HIGH"
         else:
             return "VERY_HIGH"
