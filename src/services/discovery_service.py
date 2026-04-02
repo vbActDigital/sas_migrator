@@ -154,6 +154,7 @@ class DiscoveryService:
                 pdf_gen.generate(
                     parsed_programs, datasets_metadata, lineage,
                     catalog_data=catalog_data,
+                    validation_findings=validation_findings,
                     output_path=pdf_path,
                 )
                 results["pdf_report"] = pdf_path

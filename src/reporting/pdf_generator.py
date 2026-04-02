@@ -225,6 +225,7 @@ class PDFReportGenerator:
         datasets_metadata: List[Dict],
         lineage: Dict,
         catalog_data: Optional[Dict] = None,
+        validation_findings: Optional[List[Dict]] = None,
         output_path: str = "discovery_report.pdf",
     ) -> str:
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
@@ -235,7 +236,10 @@ class PDFReportGenerator:
         pdf.cover_page(self.config)
 
         # 1. Executive Summary
-        self._page_executive_summary(pdf, parsed_programs, datasets_metadata, lineage)
+        self._page_executive_summary(
+            pdf, parsed_programs, datasets_metadata, lineage,
+            validation_findings=validation_findings,
+        )
 
         # 2. Program Inventory
         self._page_program_inventory(pdf, parsed_programs)
@@ -250,10 +254,13 @@ class PDFReportGenerator:
         if catalog_data:
             self._page_catalog(pdf, catalog_data)
 
-        # 6. Complexity & Gaps
+        # 6. Complexity (4 dimensions)
         self._page_complexity(pdf, parsed_programs)
 
-        # 7. Limitations & Next Steps
+        # 7. Validation Findings
+        self._page_validation_findings(pdf, validation_findings or [])
+
+        # 8. Limitations & Next Steps
         self._page_limitations(pdf)
 
         pdf.output(output_path)
@@ -264,7 +271,8 @@ class PDFReportGenerator:
         )
         return output_path
 
-    def _page_executive_summary(self, pdf, parsed, ds_meta, lineage):
+    def _page_executive_summary(self, pdf, parsed, ds_meta, lineage,
+                                validation_findings=None):
         pdf.add_page()
         pdf.section_title("1", "SUMARIO EXECUTIVO")
 
@@ -273,23 +281,26 @@ class PDFReportGenerator:
             f"Este relatorio apresenta os resultados da fase de Discovery do projeto "
             f"de migracao do ecossistema SAS para {self.target_platform} "
             f"{'de ' + client if client else ''}. A analise abrange o inventario "
-            f"completo de programas, datasets, dependencias, complexidade e "
-            f"classificacao de dados do ambiente SAS existente."
+            f"completo de programas, datasets, dependencias, complexidade, "
+            f"integridade de codigo e classificacao de dados do ambiente SAS existente."
         )
         pdf.ln(2)
 
         y = pdf.get_y()
         pdf.metric_box("Programas", len(parsed), 12, y, 35, 22, pdf.BG_ACCENT)
         pdf.metric_box("Datasets", len(ds_meta), 52, y, 35, 22, pdf.BG_ACCENT)
-        total_rows = sum(d.get("row_count", 0) for d in ds_meta)
-        pdf.metric_box("Linhas", f"{total_rows:,}", 92, y, 35, 22, pdf.BG_ACCENT)
+        total_lines = sum(p.get("line_count", 0) for p in parsed)
+        pdf.metric_box("Linhas", f"{total_lines:,}", 92, y, 35, 22, pdf.BG_ACCENT)
         pdf.metric_box(
             "Nos Lineage", len(lineage.get("nodes", [])),
             132, y, 35, 22, pdf.BG_DARK,
         )
+        findings = validation_findings or []
+        n_critical = len([f for f in findings if f.get("severity") == "CRITICAL"])
+        finding_color = pdf.RED if n_critical > 0 else pdf.GREEN
         pdf.metric_box(
-            "Arestas", len(lineage.get("edges", [])),
-            172, y, 28, 22, pdf.BG_DARK,
+            "Achados", len(findings),
+            172, y, 28, 22, finding_color,
         )
         pdf.set_y(y + 28)
 
@@ -490,8 +501,17 @@ class PDFReportGenerator:
 
     def _page_complexity(self, pdf, parsed):
         pdf.add_page()
-        pdf.section_title("6", "ANALISE DE COMPLEXIDADE E GAPS")
+        pdf.section_title("6", "ANALISE DE COMPLEXIDADE (CT = PLP + PDI + PVD + PRS)")
 
+        pdf.body_text(
+            "Complexidade calculada em 4 dimensoes: "
+            "PLP (Logica de Programacao), PDI (Dependencias e Integracao), "
+            "PVD (Volume e Variedade de Dados), PRS (Recursos Especificos SAS). "
+            "Nivel por dimensao: Baixa (1-2), Media (3-5), Alta (>5)."
+        )
+        pdf.ln(2)
+
+        # Complexity bars
         colors = {
             "LOW": pdf.GREEN, "MEDIUM": pdf.YELLOW,
             "HIGH": pdf.ORANGE, "VERY_HIGH": pdf.RED,
@@ -508,7 +528,45 @@ class PDFReportGenerator:
             )
 
         pdf.ln(3)
-        pdf.sub_title("Gaps Identificados")
+        pdf.sub_title("Detalhamento por Dimensao")
+
+        headers = ["Programa", "CT", "Nivel", "PLP", "PDI", "PVD", "PRS", "Esforco"]
+        rows = []
+        for p in sorted(parsed, key=lambda x: x.get("complexity_score", 0), reverse=True):
+            dims = p.get("complexity_dimensions", {})
+            rows.append([
+                p.get("filename", "")[:28],
+                str(dims.get("CT", p.get("complexity_score", 0))),
+                p.get("complexity_level", ""),
+                f"{dims.get('PLP', '?')} ({dims.get('PLP_nivel', '?')[:1]})",
+                f"{dims.get('PDI', '?')} ({dims.get('PDI_nivel', '?')[:1]})",
+                f"{dims.get('PVD', '?')} ({dims.get('PVD_nivel', '?')[:1]})",
+                f"{dims.get('PRS', '?')} ({dims.get('PRS_nivel', '?')[:1]})",
+                dims.get("esforco_hh", "N/A"),
+            ])
+        pdf.add_table(headers, rows, [38, 12, 22, 20, 20, 20, 20, 34])
+
+        pdf.ln(2)
+        pdf.sub_title("Fatores Detalhados")
+        det_headers = ["Programa", "Hash", "Dyn SQL", "Macros", "Joins", "IF/THEN", "Linhas"]
+        det_rows = []
+        for p in sorted(parsed, key=lambda x: x.get("complexity_score", 0), reverse=True):
+            det_rows.append([
+                p.get("filename", "")[:28],
+                "Sim" if p.get("has_hash_objects") else "-",
+                "Sim" if p.get("has_dynamic_sql") else "-",
+                str(len(p.get("macro_definitions", []))),
+                str(p.get("join_count", 0)),
+                str(p.get("if_then_chains", 0)),
+                str(p.get("line_count", 0)),
+            ])
+        pdf.add_table(det_headers, det_rows, [38, 18, 22, 22, 22, 24, 40])
+
+        # Gaps
+        if pdf.get_y() > 220:
+            pdf.add_page()
+        pdf.ln(2)
+        pdf.sub_title("Gaps Identificados para Migracao")
         target_short = (
             "Snowflake" if "snowflake" in self.target_platform.lower()
             else "Databricks"
@@ -532,9 +590,103 @@ class PDFReportGenerator:
             gaps, [55, 105, 26],
         )
 
+    def _page_validation_findings(self, pdf, findings: List[Dict]):
+        pdf.add_page()
+        pdf.section_title("7", "ANALISE DE INTEGRIDADE E QUALIDADE DO CODIGO")
+
+        if not findings:
+            pdf.body_text("Nenhum problema de integridade detectado.")
+            return
+
+        # Summary boxes
+        severity_counts = Counter(f.get("severity", "?") for f in findings)
+        y = pdf.get_y()
+        n_crit = severity_counts.get("CRITICAL", 0)
+        n_high = severity_counts.get("HIGH", 0)
+        n_med = severity_counts.get("MEDIUM", 0)
+        n_low = severity_counts.get("LOW", 0)
+        pdf.metric_box("CRITICO", n_crit, 12, y, 42, 22, pdf.RED if n_crit else pdf.GREEN)
+        pdf.metric_box("ALTO", n_high, 59, y, 42, 22, pdf.ORANGE if n_high else pdf.GREEN)
+        pdf.metric_box("MEDIO", n_med, 106, y, 42, 22, pdf.YELLOW if n_med else pdf.GREEN)
+        pdf.metric_box("BAIXO", n_low, 153, y, 42, 22, pdf.BG_DARK)
+        pdf.set_y(y + 28)
+
+        # Summary table
+        pdf.sub_title("Resumo dos Achados")
+        summary_rows = []
+        for sev in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
+            items = [f for f in findings if f.get("severity") == sev]
+            if items:
+                categories = ", ".join(sorted(set(f.get("category", "") for f in items)))
+                programs = ", ".join(sorted(set(f.get("program", "")[:25] for f in items)))
+                summary_rows.append([sev, str(len(items)), categories[:45], programs[:40]])
+        pdf.add_table(
+            ["Severidade", "Qtde", "Categorias", "Programas"],
+            summary_rows, [24, 12, 80, 70],
+        )
+
+        # Recommendation type labels
+        rec_labels = {
+            "EXTRACAO_MANUAL": "Extracao Manual",
+            "CORRECAO_CODIGO": "Correcao de Codigo",
+            "CONFIGURACAO_EXPORT": "Config. Export",
+            "REVISAO_MANUAL": "Revisao Manual",
+        }
+
+        # Detailed findings
+        pdf.sub_title("Detalhamento dos Achados")
+        for i, f in enumerate(findings, 1):
+            if pdf.get_y() > 240:
+                pdf.add_page()
+
+            sev = f.get("severity", "?")
+            sev_colors = {
+                "CRITICAL": pdf.RED, "HIGH": pdf.ORANGE,
+                "MEDIUM": pdf.YELLOW, "LOW": pdf.BG_DARK,
+            }
+            color = sev_colors.get(sev, pdf.BG_ACCENT)
+
+            # Finding header bar
+            pdf.set_fill_color(*color)
+            pdf.rect(12, pdf.get_y(), 186, 7, "F")
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_text_color(*pdf.TXT_WHITE)
+            pdf.set_x(14)
+            rec_type = rec_labels.get(f.get("recommendation_type", ""), f.get("recommendation_type", ""))
+            line_info = f" (linha ~{f['line']})" if f.get("line", 0) > 0 else ""
+            pdf.cell(0, 7, f"#{i} [{sev}] {f.get('category', '')} | {f.get('program', '')}{line_info}")
+            pdf.ln(9)
+            pdf.set_text_color(*pdf.TXT_DARK)
+
+            # Description
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_x(14)
+            pdf.cell(30, 5, "Erro:")
+            pdf.set_font("Helvetica", "", 8)
+            pdf.set_x(44)
+            pdf.multi_cell(154, 4, f.get("description", "")[:200])
+
+            # Impact
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_x(14)
+            pdf.cell(30, 5, "Impacto:")
+            pdf.set_font("Helvetica", "", 8)
+            pdf.set_x(44)
+            pdf.multi_cell(154, 4, f.get("impact", "")[:200])
+
+            # Recommendation
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_x(14)
+            pdf.cell(30, 5, f"Acao ({rec_type}):")
+            pdf.set_font("Helvetica", "", 8)
+            pdf.set_x(44)
+            pdf.multi_cell(154, 4, f.get("recommendation", "")[:250])
+
+            pdf.ln(3)
+
     def _page_limitations(self, pdf):
         pdf.add_page()
-        pdf.section_title("7", "LIMITACOES E PROXIMOS PASSOS")
+        pdf.section_title("8", "LIMITACOES E PROXIMOS PASSOS")
 
         limitations = [
             "Parser SAS baseado em regex (~80% de cobertura dos padroes comuns).",
