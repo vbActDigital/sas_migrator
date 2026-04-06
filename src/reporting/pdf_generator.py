@@ -636,7 +636,7 @@ class PDFReportGenerator:
         # Detailed findings
         pdf.sub_title("Detalhamento dos Achados")
         for i, f in enumerate(findings, 1):
-            if pdf.get_y() > 240:
+            if pdf.get_y() > 235:
                 pdf.add_page()
 
             sev = f.get("severity", "?")
@@ -654,33 +654,38 @@ class PDFReportGenerator:
             pdf.set_x(14)
             rec_type = rec_labels.get(f.get("recommendation_type", ""), f.get("recommendation_type", ""))
             line_info = f" (linha ~{f['line']})" if f.get("line", 0) > 0 else ""
-            pdf.cell(0, 7, f"#{i} [{sev}] {f.get('category', '')} | {f.get('program', '')}{line_info}")
+            header_text = f"#{i} [{sev}] {f.get('category', '')} | {f.get('program', '')}{line_info}"
+            pdf.cell(182, 7, header_text[:90])
             pdf.ln(9)
             pdf.set_text_color(*pdf.TXT_DARK)
 
             # Description
             pdf.set_font("Helvetica", "B", 8)
             pdf.set_x(14)
-            pdf.cell(30, 5, "Erro:")
+            pdf.cell(22, 5, "Erro:")
             pdf.set_font("Helvetica", "", 8)
-            pdf.set_x(44)
-            pdf.multi_cell(154, 4, f.get("description", "")[:200])
+            pdf.set_x(14)
+            pdf.ln(5)
+            pdf.set_x(16)
+            pdf.multi_cell(180, 4, f.get("description", "")[:200])
 
             # Impact
             pdf.set_font("Helvetica", "B", 8)
             pdf.set_x(14)
-            pdf.cell(30, 5, "Impacto:")
+            pdf.cell(22, 5, "Impacto:")
             pdf.set_font("Helvetica", "", 8)
-            pdf.set_x(44)
-            pdf.multi_cell(154, 4, f.get("impact", "")[:200])
+            pdf.ln(5)
+            pdf.set_x(16)
+            pdf.multi_cell(180, 4, f.get("impact", "")[:200])
 
             # Recommendation
             pdf.set_font("Helvetica", "B", 8)
             pdf.set_x(14)
-            pdf.cell(30, 5, f"Acao ({rec_type}):")
+            pdf.cell(22, 5, f"Acao ({rec_type}):")
             pdf.set_font("Helvetica", "", 8)
-            pdf.set_x(44)
-            pdf.multi_cell(154, 4, f.get("recommendation", "")[:250])
+            pdf.ln(5)
+            pdf.set_x(16)
+            pdf.multi_cell(180, 4, f.get("recommendation", "")[:250])
 
             pdf.ln(3)
 
