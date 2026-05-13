@@ -27,14 +27,27 @@ class DiscoveryService:
         # Step 1: Filesystem scan
         logger.info("Step 1: Scanning filesystem...")
         scanner = SASFilesystemScanner(self.config)
-        programs_files = scanner.scan_programs()
-        datasets_files = scanner.scan_datasets()
-        logs_files = scanner.scan_logs()
-        results["scan"] = {
-            "programs": len(programs_files),
-            "datasets": len(datasets_files),
-            "logs": len(logs_files),
-        }
+        sas_env = self.config.get("sas_environment", {})
+        if sas_env.get("scan_roots"):
+            discovered = scanner.discover()
+            programs_files = discovered["programs"]
+            datasets_files = discovered["datasets"]
+            logs_files     = discovered["logs"]
+            results["scan"] = {
+                "programs": len(programs_files),
+                "datasets": len(datasets_files),
+                "logs":     len(logs_files),
+                "configs":  len(discovered["configs"]),
+            }
+        else:
+            programs_files = scanner.scan_programs()
+            datasets_files = scanner.scan_datasets()
+            logs_files     = scanner.scan_logs()
+            results["scan"] = {
+                "programs": len(programs_files),
+                "datasets": len(datasets_files),
+                "logs":     len(logs_files),
+            }
 
         # Step 2: Parse SAS code
         logger.info("Step 2: Parsing SAS programs...")

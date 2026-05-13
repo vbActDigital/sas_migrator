@@ -5,24 +5,29 @@ project:
 # ── Ambiente SAS (RHEL 7.9 / SAS 9.4) ────────────────────────
 sas_environment:
   source_type: filesystem
-  code_paths:
-    - /sas/programs          # ajustar para o caminho real na BMG
-    - /sas/macros            # ajustar ou remover se não existir
-  data_paths:
-    - /sas/data              # ajustar para o caminho real na BMG
-  log_paths:
-    - /sas/logs              # ajustar ou remover se não existir
+
+  # Auto-discovery: o scanner percorre os diretórios abaixo
+  # procurando todos os arquivos SAS por extensão (.sas, .sas7bdat,
+  # .log, .lst, .cfg, .spk, .egp, .ctp, .amx, .smd, .djf, .ddf,
+  # .sas7bpgm, .xpt, .stx).
+  # Adicione quantas raízes quiser — ex: /home, /opt/sas, /data
+  scan_roots:
+    - /
+
   exclude_patterns:
     - backup
     - archive
     - ".git"
     - __pycache__
+    - ".Trash"
+    - lost+found
 
   # Encoding dos arquivos SAS — Latin-1 é comum em SAS 9.4 Linux
   # Opções: utf-8 | latin-1 | iso-8859-1 | cp1252
   file_encoding: latin-1
 
-  max_scan_depth: 10
+  # Profundidade máxima de recursão a partir de cada scan_root
+  max_scan_depth: 20
 
 # ── Plataforma destino ────────────────────────────────────────
 target:

@@ -13,8 +13,8 @@ _ENV_VAR_PATTERN = re.compile(r'\$\{(\w+)\}')
 
 REQUIRED_FIELDS = [
     "project.name",
-    "sas_environment.code_paths",
 ]
+# code_paths OR scan_roots must be present — validated separately below
 
 
 class ConfigLoader:
@@ -69,6 +69,15 @@ class ConfigLoader:
                 if not isinstance(current, dict) or part not in current:
                     raise ValueError(f"Missing required config field: {field_path}")
                 current = current[part]
+
+        sas_env = self._config.get("sas_environment", {})
+        has_roots = bool(sas_env.get("scan_roots"))
+        has_paths = bool(sas_env.get("code_paths"))
+        if not has_roots and not has_paths:
+            raise ValueError(
+                "sas_environment must define either 'scan_roots' (auto-discovery) "
+                "or 'code_paths' (explicit paths)"
+            )
         logger.info("Configuration validation passed")
 
     @property
