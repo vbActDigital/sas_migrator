@@ -51,8 +51,11 @@ SAS_BUILTIN_MACROS = {"if", "then", "else", "do", "end", "let", "put", "str", "s
 
 
 class SASCodeParser:
+    def __init__(self, encoding: str = "utf-8"):
+        self._encoding = encoding
+
     def parse_file(self, filepath: str) -> Dict:
-        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+        with open(filepath, "r", encoding=self._encoding, errors="replace") as f:
             content = f.read()
         lines = content.splitlines()
 

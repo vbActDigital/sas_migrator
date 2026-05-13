@@ -166,8 +166,9 @@ RUN;
         assert len(result["includes"]) == 1
 
     def test_empty_file(self, parser, tmp_path):
+        # Each dimension has a minimum score of 1, so minimum CT = 4 by design.
         fpath = tmp_path / "empty.sas"
         fpath.write_text("/* empty file */\n")
         result = parser.parse_file(str(fpath))
-        assert result["complexity_score"] == 0
+        assert result["complexity_score"] == 4
         assert result["complexity_level"] == "LOW"

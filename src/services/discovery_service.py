@@ -38,7 +38,8 @@ class DiscoveryService:
 
         # Step 2: Parse SAS code
         logger.info("Step 2: Parsing SAS programs...")
-        code_parser = SASCodeParser()
+        sas_enc = self.config.get("sas_environment", {}).get("file_encoding", "utf-8")
+        code_parser = SASCodeParser(encoding=sas_enc)
         parsed_programs = []
         for prog_file in programs_files:
             try:
@@ -72,7 +73,7 @@ class DiscoveryService:
 
         # Step 4.5: Deep code validation
         logger.info("Step 4.5: Running deep code validation...")
-        validator = SASCodeValidator()
+        validator = SASCodeValidator(encoding=sas_enc)
         validation_findings = []
         for parsed in parsed_programs:
             try:
@@ -111,7 +112,7 @@ class DiscoveryService:
             logger.info("Step 6a: Running LLM validation...")
             for parsed in parsed_programs[:5]:
                 try:
-                    with open(parsed["filepath"], "r", encoding="utf-8", errors="replace") as f:
+                    with open(parsed["filepath"], "r", encoding=sas_enc, errors="replace") as f:
                         code = f.read()
                     validation = self.llm_advisor.validate_parser_output(code, parsed)
                     parsed["llm_validation"] = validation

@@ -1,0 +1,71 @@
+project:
+  name: "SAS Migration - BMG"
+  client: "BMG"
+
+# ── Ambiente SAS (RHEL 7.9 / SAS 9.4) ────────────────────────
+sas_environment:
+  source_type: filesystem
+  code_paths:
+    - /sas/programs          # ajustar para o caminho real na BMG
+    - /sas/macros            # ajustar ou remover se não existir
+  data_paths:
+    - /sas/data              # ajustar para o caminho real na BMG
+  log_paths:
+    - /sas/logs              # ajustar ou remover se não existir
+  exclude_patterns:
+    - backup
+    - archive
+    - ".git"
+    - __pycache__
+
+  # Encoding dos arquivos SAS — Latin-1 é comum em SAS 9.4 Linux
+  # Opções: utf-8 | latin-1 | iso-8859-1 | cp1252
+  file_encoding: latin-1
+
+  max_scan_depth: 10
+
+# ── Plataforma destino ────────────────────────────────────────
+target:
+  platform: snowflake
+  account: ${SNOWFLAKE_ACCOUNT}
+  user: ${SNOWFLAKE_USER}
+  password: ${SNOWFLAKE_PASSWORD}
+  warehouse: MIGRATION_WH
+  database: BMG_MIGRATION
+  role: SYSADMIN
+
+  aws:
+    region: us-east-1
+    s3_bucket: bmg-sas-migration-staging
+    s3_prefix: raw/
+    iam_role: ${AWS_IAM_ROLE}
+
+# ── Mapeamento de bibliotecas SAS ─────────────────────────────
+# Ajustar conforme as LIBNAME definidas nos programas SAS da BMG
+library_mapping:
+  work:
+    database: BMG_MIGRATION
+    schema: WORK
+  rawdata:
+    database: BMG_MIGRATION
+    schema: RAW
+  dw:
+    database: BMG_MIGRATION
+    schema: REFINED
+
+# ── Catálogo ─────────────────────────────────────────────────
+catalog:
+  output_format:
+    - json
+    - markdown
+  detect_pii: true
+  infer_domains: true
+
+# ── LLM (opcional) ───────────────────────────────────────────
+llm:
+  provider: openai
+  api_key_env: OPENAI_API_KEY
+  models:
+    fast: gpt-4o-mini
+    balanced: gpt-4o
+    powerful: gpt-4o

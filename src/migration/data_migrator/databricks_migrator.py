@@ -104,10 +104,10 @@ class DatabricksMigrator:
         col_length = col.get("length", 0)
 
         if col_type == "num":
-            if any(fmt in col_format for fmt in DATE_FORMATS):
-                return "DATE"
             if any(fmt in col_format for fmt in DATETIME_FORMATS):
                 return "TIMESTAMP"
+            if any(fmt in col_format for fmt in DATE_FORMATS):
+                return "DATE"
             if "commax" in col_format or "dollar" in col_format:
                 return "DECIMAL(20,2)"
             return "DOUBLE"

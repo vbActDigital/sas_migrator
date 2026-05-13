@@ -1,11 +1,28 @@
 import os
 import fnmatch
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from src.utils.logger import get_logger
 
 logger = get_logger("filesystem_scanner")
+
+_ENCODING_CANDIDATES = ["utf-8", "latin-1", "cp1252", "iso-8859-1"]
+
+
+def _detect_encoding(fpath: str) -> Tuple[str, int]:
+    """Try encodings in order; return (encoding, line_count)."""
+    for enc in _ENCODING_CANDIDATES:
+        try:
+            with open(fpath, "r", encoding=enc) as f:
+                lines = sum(1 for _ in f)
+            return enc, lines
+        except UnicodeDecodeError:
+            continue
+    # Fallback — replace unknown chars, always succeeds
+    with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+        lines = sum(1 for _ in f)
+    return "utf-8", lines
 
 
 class SASFilesystemScanner:
@@ -16,6 +33,8 @@ class SASFilesystemScanner:
         self.log_paths: List[str] = sas_env.get("log_paths", [])
         self.exclude_patterns: List[str] = sas_env.get("exclude_patterns", [])
         self.max_scan_depth: int = sas_env.get("max_scan_depth", 10)
+        # Encoding configurado no YAML; None = auto-detectar
+        self._forced_encoding: Optional[str] = sas_env.get("file_encoding")
 
     def scan_programs(self) -> List[Dict]:
         results = []
@@ -39,8 +58,12 @@ class SASFilesystemScanner:
                         continue
                     try:
                         stat = os.stat(fpath)
-                        with open(fpath, "r", encoding="utf-8", errors="replace") as f:
-                            line_count = sum(1 for _ in f)
+                        if self._forced_encoding:
+                            with open(fpath, "r", encoding=self._forced_encoding, errors="replace") as f:
+                                line_count = sum(1 for _ in f)
+                            detected_enc = self._forced_encoding
+                        else:
+                            detected_enc, line_count = _detect_encoding(fpath)
                         results.append({
                             "filename": fname,
                             "absolute_path": os.path.abspath(fpath),
@@ -48,7 +71,7 @@ class SASFilesystemScanner:
                             "size_bytes": stat.st_size,
                             "line_count": line_count,
                             "last_modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                            "encoding": "utf-8",
+                            "encoding": detected_enc,
                         })
                     except Exception as e:
                         logger.error("Error scanning %s: %s", fpath, e)
