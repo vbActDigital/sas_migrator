@@ -29,6 +29,12 @@ sas_environment:
   # Profundidade máxima de recursão a partir de cada scan_root
   max_scan_depth: 20
 
+  # Threads paralelas para varredura (I/O-bound: mais = mais rápido)
+  scan_workers: 16
+
+  # Pular diretórios ocultos (.git, .cache, etc.) — quase nunca têm SAS
+  skip_hidden_dirs: true
+
 # ── Plataforma destino ────────────────────────────────────────
 target:
   platform: snowflake

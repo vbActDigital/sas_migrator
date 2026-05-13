@@ -1,6 +1,8 @@
 import os
 import sys
 import fnmatch
+import queue
+import threading
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
@@ -8,191 +10,207 @@ from src.utils.logger import get_logger
 
 logger = get_logger("filesystem_scanner")
 
-_ENCODING_CANDIDATES = ["utf-8", "latin-1", "cp1252", "iso-8859-1"]
+# O(1) extension lookups via frozenset
+_EXT_CODE   = frozenset({".sas", ".sas7bpgm"})
+_EXT_DATA   = frozenset({".sas7bdat", ".sas7bcat", ".xpt", ".stx"})
+_EXT_LOG    = frozenset({".log", ".lst"})
+_EXT_CONFIG = frozenset({".cfg", ".spk", ".egp", ".ctp", ".amx", ".smd", ".djf", ".ddf"})
+_EXT_ALL    = _EXT_CODE | _EXT_DATA | _EXT_LOG | _EXT_CONFIG
 
-# Extensions for each category
-_EXT_CODE    = {".sas", ".sas7bpgm"}
-_EXT_DATA    = {".sas7bdat", ".sas7bcat", ".xpt", ".stx"}
-_EXT_LOG     = {".log", ".lst"}
-_EXT_CONFIG  = {".cfg", ".spk", ".egp", ".ctp", ".amx", ".smd", ".djf", ".ddf"}
-
-# Linux virtual/system directories that are never worth scanning
-_LINUX_SKIP = {
-    "/proc", "/sys", "/dev", "/run", "/tmp",
-    "/boot", "/lib", "/lib64", "/lib32",
-    "/usr/lib", "/usr/lib64", "/usr/lib32",
-    "/usr/share", "/usr/local/lib",
-    "/bin", "/sbin", "/usr/bin", "/usr/sbin",
+# Linux virtual/system dirs — never worth entering
+_LINUX_SKIP_EXACT = frozenset({
+    "/proc", "/sys", "/dev", "/run", "/boot",
+    "/bin", "/sbin",
+})
+_LINUX_SKIP_PREFIX = (
+    "/lib", "/lib64", "/lib32",
+    "/usr/lib", "/usr/lib64", "/usr/share",
+    "/usr/bin", "/usr/sbin",
     "/snap", "/selinux", "/cgroup",
-}
+)
+
+_IS_LINUX = sys.platform != "win32"
+_SENTINEL  = object()   # poison pill to stop worker threads
 
 
-def _detect_encoding(fpath: str) -> Tuple[str, int]:
-    """Try encodings in order; return (encoding, line_count)."""
-    for enc in _ENCODING_CANDIDATES:
+def _count_lines_fast(fpath: str, forced_enc: Optional[str]) -> Tuple[str, int]:
+    """Read binary once — count \\n and detect encoding from BOM/heuristic.
+
+    Avoids re-opening the file multiple times and eliminates Python text-mode
+    overhead.  Returns (encoding, line_count).
+    """
+    try:
+        with open(fpath, "rb") as f:
+            data = f.read()
+        # Count lines: number of newlines + 1 if file doesn't end with one
+        count = data.count(b"\n")
+        if data and not data.endswith(b"\n"):
+            count += 1
+        if forced_enc:
+            return forced_enc, count
+        if data[:3] == b"\xef\xbb\xbf":
+            return "utf-8-sig", count
         try:
-            with open(fpath, "r", encoding=enc) as f:
-                lines = sum(1 for _ in f)
-            return enc, lines
+            data.decode("utf-8")
+            return "utf-8", count
         except UnicodeDecodeError:
-            continue
-    with open(fpath, "r", encoding="utf-8", errors="replace") as f:
-        lines = sum(1 for _ in f)
-    return "utf-8", lines
+            return "latin-1", count
+    except Exception:
+        return forced_enc or "utf-8", -1
 
 
 class SASFilesystemScanner:
     def __init__(self, config: Dict):
         sas_env = config.get("sas_environment", {})
-        # Legacy explicit-path mode
-        self.code_paths: List[str] = sas_env.get("code_paths", [])
-        self.data_paths: List[str] = sas_env.get("data_paths", [])
-        self.log_paths:  List[str] = sas_env.get("log_paths", [])
         # Auto-discovery mode
-        self.scan_roots: List[str] = sas_env.get("scan_roots", [])
+        self.scan_roots: List[str]       = sas_env.get("scan_roots", [])
+        # Legacy explicit-path mode
+        self.code_paths: List[str]       = sas_env.get("code_paths", [])
+        self.data_paths: List[str]       = sas_env.get("data_paths", [])
+        self.log_paths:  List[str]       = sas_env.get("log_paths", [])
+        # Common options
         self.exclude_patterns: List[str] = sas_env.get("exclude_patterns", [])
-        self.max_scan_depth: int = sas_env.get("max_scan_depth", 20)
-        self._forced_encoding: Optional[str] = sas_env.get("file_encoding")
+        self.max_scan_depth: int         = sas_env.get("max_scan_depth", 20)
+        self._forced_enc: Optional[str]  = sas_env.get("file_encoding")
+        # Parallel workers — I/O-bound: more threads = more win
+        self._workers: int               = sas_env.get("scan_workers", 16)
+        # Skip .hidden dirs (e.g. .git, .cache) — almost never contain SAS files
+        self._skip_hidden: bool          = sas_env.get("skip_hidden_dirs", True)
 
-    # ------------------------------------------------------------------
-    # Auto-discovery mode  (used when scan_roots is set in config)
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------
+    # Auto-discovery  (scan_roots config key)
+    # ----------------------------------------------------------------
     def discover(self) -> Dict[str, List[Dict]]:
-        """Walk scan_roots recursively and classify every SAS-related file.
+        """Parallel BFS from scan_roots, classifying every SAS file by extension.
 
-        Returns a dict with keys:
-          programs  — .sas / .sas7bpgm  (same shape as scan_programs())
-          datasets  — .sas7bdat / .sas7bcat / .xpt / .stx (same shape as scan_datasets())
-          logs      — .log / .lst  (same shape as scan_logs())
+        Returns:
+          programs  — .sas / .sas7bpgm
+          datasets  — .sas7bdat / .sas7bcat / .xpt / .stx
+          logs      — .log / .lst
           configs   — .cfg / .spk / .egp / .ctp / .amx / .smd / .djf / .ddf
         """
-        roots = self.scan_roots or (["/" ] if sys.platform != "win32" else ["C:\\"])
-        result: Dict[str, List[Dict]] = {
-            "programs": [], "datasets": [], "logs": [], "configs": []
-        }
+        default_root = "/" if _IS_LINUX else "C:\\"
+        roots = [r for r in (self.scan_roots or [default_root]) if os.path.isdir(r)]
+        if not roots:
+            logger.warning("No valid scan_roots found")
+            return {"programs": [], "datasets": [], "logs": [], "configs": []}
 
-        for root_path in roots:
-            if not os.path.isdir(root_path):
-                logger.warning("scan_root does not exist: %s", root_path)
-                continue
-            logger.info("Auto-discovering SAS files from: %s", root_path)
-            self._walk_and_classify(root_path, root_path, depth=0, result=result)
+        dir_queue: "queue.Queue[object]" = queue.Queue()
+        shared: Dict[str, List] = {"programs": [], "datasets": [], "logs": [], "configs": []}
+        lock = threading.Lock()
+
+        for root in roots:
+            dir_queue.put((root, 0))
+
+        def worker():
+            # Each thread accumulates locally; merges once at the end (fewer lock ops)
+            local: Dict[str, List] = {"programs": [], "datasets": [], "logs": [], "configs": []}
+            while True:
+                item = dir_queue.get()
+                if item is _SENTINEL:
+                    if any(local[k] for k in local):
+                        with lock:
+                            for cat, items in local.items():
+                                shared[cat].extend(items)
+                    dir_queue.task_done()
+                    return
+                dir_path, depth = item
+                try:
+                    self._scan_dir(dir_path, depth, dir_queue, local)
+                except Exception as e:
+                    logger.debug("Worker error %s: %s", dir_path, e)
+                finally:
+                    dir_queue.task_done()
+
+        threads = [threading.Thread(target=worker, daemon=True)
+                   for _ in range(self._workers)]
+        for t in threads:
+            t.start()
+
+        dir_queue.join()                    # wait for all dirs to be processed
+
+        for _ in threads:                   # send poison pills
+            dir_queue.put(_SENTINEL)
+        for t in threads:
+            t.join()
 
         logger.info(
-            "Discovery complete — programs=%d datasets=%d logs=%d configs=%d",
-            len(result["programs"]), len(result["datasets"]),
-            len(result["logs"]), len(result["configs"]),
+            "Discovery — programs=%d  datasets=%d  logs=%d  configs=%d",
+            len(shared["programs"]), len(shared["datasets"]),
+            len(shared["logs"]),     len(shared["configs"]),
         )
-        return result
+        return shared
 
-    def _walk_and_classify(
-        self, root_path: str, base_path: str, depth: int,
-        result: Dict[str, List[Dict]]
+    def _scan_dir(
+        self,
+        dir_path: str,
+        depth: int,
+        dir_queue: queue.Queue,
+        local: Dict[str, List],
     ):
-        if depth > self.max_scan_depth:
-            return
-
         try:
-            entries = os.scandir(root_path)
-        except PermissionError:
-            return
-        except Exception as e:
-            logger.debug("Cannot scan %s: %s", root_path, e)
-            return
-
-        subdirs = []
-        with entries:
-            for entry in entries:
-                if entry.is_symlink():
-                    continue  # skip symlinks to avoid loops
-                if entry.is_dir(follow_symlinks=False):
-                    if self._should_skip_dir(entry.path):
+            with os.scandir(dir_path) as it:
+                for entry in it:
+                    try:
+                        if entry.is_symlink():
+                            continue
+                        if entry.is_dir(follow_symlinks=False):
+                            if depth < self.max_scan_depth \
+                                    and not self._should_skip_dir(entry.path):
+                                dir_queue.put((entry.path, depth + 1))
+                        elif entry.is_file(follow_symlinks=False):
+                            ext = os.path.splitext(entry.name)[1].lower()
+                            if ext in _EXT_ALL \
+                                    and not self._should_exclude(entry.path):
+                                rec = self._make_record(entry, ext)
+                                if rec is not None:
+                                    local[_category(ext)].append(rec)
+                    except Exception:
                         continue
-                    subdirs.append(entry.path)
-                elif entry.is_file(follow_symlinks=False):
-                    self._classify_file(entry, base_path, result)
+        except PermissionError:
+            pass
+        except Exception as e:
+            logger.debug("Cannot open %s: %s", dir_path, e)
 
-        for subdir in subdirs:
-            self._walk_and_classify(subdir, base_path, depth + 1, result)
-
-    def _classify_file(
-        self, entry, base_path: str, result: Dict[str, List[Dict]]
-    ):
-        fname = entry.name
-        ext = os.path.splitext(fname)[1].lower()
-
-        if ext not in (_EXT_CODE | _EXT_DATA | _EXT_LOG | _EXT_CONFIG):
-            return
-        if self._should_exclude(entry.path):
-            return
-
+    def _make_record(self, entry, ext: str) -> Optional[Dict]:
         try:
-            stat = entry.stat(follow_symlinks=False)
+            st = entry.stat(follow_symlinks=False)
         except Exception:
-            return
-
+            return None
         fpath = entry.path
-        abs_path = os.path.abspath(fpath)
-        rel_path = os.path.relpath(fpath, base_path)
-
+        rec: Dict = {
+            "filename":      entry.name,
+            "absolute_path": fpath,
+            "size_bytes":    st.st_size,
+            "last_modified": datetime.fromtimestamp(st.st_mtime).isoformat(),
+            "file_type":     ext.lstrip("."),
+        }
         if ext in _EXT_CODE:
-            if self._forced_encoding:
-                with open(fpath, "r", encoding=self._forced_encoding, errors="replace") as f:
-                    line_count = sum(1 for _ in f)
-                detected_enc = self._forced_encoding
-            else:
-                detected_enc, line_count = _detect_encoding(fpath)
-            result["programs"].append({
-                "filename": fname,
-                "absolute_path": abs_path,
-                "relative_path": rel_path,
-                "size_bytes": stat.st_size,
-                "line_count": line_count,
-                "last_modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                "encoding": detected_enc,
-                "file_type": ext.lstrip("."),
-            })
-
+            enc, lines = _count_lines_fast(fpath, self._forced_enc)
+            rec["line_count"]    = lines
+            rec["encoding"]      = enc
+            rec["relative_path"] = fpath   # no fixed base in discover mode
         elif ext in _EXT_DATA:
-            result["datasets"].append({
-                "filename": fname,
-                "dataset_name": os.path.splitext(fname)[0],
-                "absolute_path": abs_path,
-                "inferred_library": os.path.basename(os.path.dirname(fpath)),
-                "file_type": ext.lstrip("."),
-                "size_bytes": stat.st_size,
-            })
-
-        elif ext in _EXT_LOG:
-            result["logs"].append({
-                "filename": fname,
-                "absolute_path": abs_path,
-                "size_bytes": stat.st_size,
-                "last_modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                "file_type": ext.lstrip("."),
-            })
-
-        elif ext in _EXT_CONFIG:
-            result["configs"].append({
-                "filename": fname,
-                "absolute_path": abs_path,
-                "size_bytes": stat.st_size,
-                "last_modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                "file_type": ext.lstrip("."),
-            })
+            rec["dataset_name"]    = os.path.splitext(entry.name)[0]
+            rec["inferred_library"] = os.path.basename(os.path.dirname(fpath))
+        return rec
 
     def _should_skip_dir(self, path: str) -> bool:
-        """Return True for dirs that should never be entered."""
-        # Linux virtual/system directories
-        normalized = path.replace("\\", "/").rstrip("/")
-        if any(normalized == skip.rstrip("/") or normalized.startswith(skip.rstrip("/") + "/")
-               for skip in _LINUX_SKIP):
+        name = os.path.basename(path)
+        if self._skip_hidden and name.startswith("."):
             return True
+        if _IS_LINUX:
+            norm = path.rstrip("/")
+            if norm in _LINUX_SKIP_EXACT:
+                return True
+            for prefix in _LINUX_SKIP_PREFIX:
+                if norm == prefix or norm.startswith(prefix + "/"):
+                    return True
         return self._should_exclude(path)
 
-    # ------------------------------------------------------------------
-    # Legacy explicit-path mode  (backward compat, used by mock/tests)
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------------
+    # Legacy explicit-path mode  (backward compat — mock / tests)
+    # ----------------------------------------------------------------
     def scan_programs(self) -> List[Dict]:
         results = []
         for base_path in self.code_paths:
@@ -202,11 +220,9 @@ class SASFilesystemScanner:
             for root, dirs, files in os.walk(base_path):
                 depth = root.replace(base_path, "").count(os.sep)
                 if depth >= self.max_scan_depth:
-                    dirs.clear()
-                    continue
+                    dirs.clear(); continue
                 if self._should_exclude(root):
-                    dirs.clear()
-                    continue
+                    dirs.clear(); continue
                 for fname in files:
                     ext = os.path.splitext(fname)[1].lower()
                     if ext not in _EXT_CODE:
@@ -215,21 +231,16 @@ class SASFilesystemScanner:
                     if self._should_exclude(fpath):
                         continue
                     try:
-                        stat = os.stat(fpath)
-                        if self._forced_encoding:
-                            with open(fpath, "r", encoding=self._forced_encoding, errors="replace") as f:
-                                line_count = sum(1 for _ in f)
-                            detected_enc = self._forced_encoding
-                        else:
-                            detected_enc, line_count = _detect_encoding(fpath)
+                        st = os.stat(fpath)
+                        enc, lines = _count_lines_fast(fpath, self._forced_enc)
                         results.append({
-                            "filename": fname,
+                            "filename":      fname,
                             "absolute_path": os.path.abspath(fpath),
                             "relative_path": os.path.relpath(fpath, base_path),
-                            "size_bytes": stat.st_size,
-                            "line_count": line_count,
-                            "last_modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                            "encoding": detected_enc,
+                            "size_bytes":    st.st_size,
+                            "line_count":    lines,
+                            "last_modified": datetime.fromtimestamp(st.st_mtime).isoformat(),
+                            "encoding":      enc,
                         })
                     except Exception as e:
                         logger.error("Error scanning %s: %s", fpath, e)
@@ -245,11 +256,9 @@ class SASFilesystemScanner:
             for root, dirs, files in os.walk(base_path):
                 depth = root.replace(base_path, "").count(os.sep)
                 if depth >= self.max_scan_depth:
-                    dirs.clear()
-                    continue
+                    dirs.clear(); continue
                 if self._should_exclude(root):
-                    dirs.clear()
-                    continue
+                    dirs.clear(); continue
                 for fname in files:
                     ext = os.path.splitext(fname)[1].lower()
                     if ext not in _EXT_DATA:
@@ -258,14 +267,14 @@ class SASFilesystemScanner:
                     if self._should_exclude(fpath):
                         continue
                     try:
-                        stat = os.stat(fpath)
+                        st = os.stat(fpath)
                         results.append({
-                            "filename": fname,
-                            "dataset_name": os.path.splitext(fname)[0],
-                            "absolute_path": os.path.abspath(fpath),
+                            "filename":       fname,
+                            "dataset_name":   os.path.splitext(fname)[0],
+                            "absolute_path":  os.path.abspath(fpath),
                             "inferred_library": os.path.basename(root),
-                            "file_type": ext.lstrip("."),
-                            "size_bytes": stat.st_size,
+                            "file_type":      ext.lstrip("."),
+                            "size_bytes":     st.st_size,
                         })
                     except Exception as e:
                         logger.error("Error scanning dataset %s: %s", fpath, e)
@@ -280,22 +289,20 @@ class SASFilesystemScanner:
             for root, dirs, files in os.walk(base_path):
                 depth = root.replace(base_path, "").count(os.sep)
                 if depth >= self.max_scan_depth:
-                    dirs.clear()
-                    continue
+                    dirs.clear(); continue
                 if self._should_exclude(root):
-                    dirs.clear()
-                    continue
+                    dirs.clear(); continue
                 for fname in files:
-                    if not any(fname.lower().endswith(ext) for ext in _EXT_LOG):
+                    if os.path.splitext(fname)[1].lower() not in _EXT_LOG:
                         continue
                     fpath = os.path.join(root, fname)
                     try:
-                        stat = os.stat(fpath)
+                        st = os.stat(fpath)
                         results.append({
-                            "filename": fname,
+                            "filename":      fname,
                             "absolute_path": os.path.abspath(fpath),
-                            "size_bytes": stat.st_size,
-                            "last_modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                            "size_bytes":    st.st_size,
+                            "last_modified": datetime.fromtimestamp(st.st_mtime).isoformat(),
                         })
                     except Exception as e:
                         logger.error("Error scanning log %s: %s", fpath, e)
@@ -304,9 +311,15 @@ class SASFilesystemScanner:
 
     def _should_exclude(self, path: str) -> bool:
         normalized = path.replace("\\", "/")
+        base = os.path.basename(path)
         for pattern in self.exclude_patterns:
-            if pattern in normalized:
-                return True
-            if fnmatch.fnmatch(os.path.basename(path), pattern):
+            if pattern in normalized or fnmatch.fnmatch(base, pattern):
                 return True
         return False
+
+
+def _category(ext: str) -> str:
+    if ext in _EXT_CODE:   return "programs"
+    if ext in _EXT_DATA:   return "datasets"
+    if ext in _EXT_LOG:    return "logs"
+    return "configs"
