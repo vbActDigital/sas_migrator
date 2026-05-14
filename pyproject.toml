@@ -4,8 +4,8 @@ build-backend = "setuptools.backends._legacy:_Backend"
 
 [project]
 name = "sas-migrator"
-version = "1.0.0"
-description = "SAS to Snowflake/Databricks Migration Toolkit with LLM support"
+version = "1.1.0"
+description = "SAS to Snowflake/Databricks Migration Toolkit"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
